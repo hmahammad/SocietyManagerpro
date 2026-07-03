@@ -1,0 +1,125 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile containing authentication details, role, and membership configuration.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "companyName": { "type": "string" },
+        "companyAddress": { "type": "string" },
+        "mobile": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "company", "member"] },
+        "status": { "type": "string", "enum": ["active", "pending", "request", "deactive"] },
+        "joinedDate": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "dob": { "type": "string" },
+        "nidType": { "type": "string" },
+        "nidNumber": { "type": "string" },
+        "accountType": { "type": "string", "enum": ["business", "saving", ""] },
+        "InvestType": { "type": "string", "enum": ["monthly", "yearly", "one_time", ""] },
+        "investAmount": { "type": "number" },
+        "investDate": { "type": "string" },
+        "profilePic": { "type": "string" },
+        "idFrontUrl": { "type": "string" },
+        "idBackUrl": { "type": "string" },
+        "amount": { "type": "number" },
+        "customShare": { "type": "number" }
+      },
+      "required": ["uid", "userId", "name", "email", "mobile", "role", "status"]
+    },
+    "History": {
+      "title": "History",
+      "description": "Financial and savings log of payments or arrears for a specific member.",
+      "type": "object",
+      "properties": {
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "memo": { "type": "string" },
+        "InvestType": { "type": "string" },
+        "type": { "type": "string" },
+        "arrears": { "type": "number" },
+        "arrearsKey": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["amount", "date"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Business project details, budget, and locations.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "desc": { "type": "string" },
+        "type": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "completed", "closed"] },
+        "location": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "duration": { "type": "string" },
+        "budget": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Project-specific financial transactions (incomes or expenses).",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "projectName": { "type": "string" },
+        "type": { "type": "string", "enum": ["expense", "sale"] },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "desc": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["projectId", "projectName", "type", "amount", "date"]
+    },
+    "Installment": {
+      "title": "Installment",
+      "description": "Multi-month installment contract for specific client purchases.",
+      "type": "object",
+      "properties": {
+        "customerName": { "type": "string" },
+        "productName": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "downPayment": { "type": "number" },
+        "monthlyPay": { "type": "number" },
+        "months": { "type": "number" },
+        "startDate": { "type": "string" },
+        "dueAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "schedule": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["customerName", "productName", "totalAmount", "months", "startDate", "dueAmount"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores user demographic profiles, current balance summaries, roles, and statuses."
+    },
+    "/users/{userId}/history/{historyId}": {
+      "schema": "History",
+      "description": "Detailed log of a user's savings contributions and arrears logs."
+    },
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Active real estate, plots, or residential projects run by the company."
+    },
+    "/accounts/{accountId}": {
+      "schema": "Transaction",
+      "description": "Transactions belonging to active projects (expenses or sales/returns)."
+    },
+    "/installments/{installmentId}": {
+      "schema": "Installment",
+      "description": "Active purchase installment plans for land, plots, or flats."
+    }
+  }
+}
