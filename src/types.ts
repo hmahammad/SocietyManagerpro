@@ -27,6 +27,7 @@ export interface User {
   birthDate?: string;
   address?: string;
   canSeeAllData?: boolean;
+  whatsapp?: string;
 }
 
 export interface HistoryEntry {
@@ -39,6 +40,22 @@ export interface HistoryEntry {
   arrears?: number;
   arrearsKey?: string;
   createdAt?: string;
+  projectId?: string;
+  projectName?: string;
+  document?: {
+    name: string;
+    fileData?: string;
+    fileType?: string;
+  };
+}
+
+export interface ProjectDoc {
+  id: string;
+  name: string;
+  fileData?: string; // base64 / dataUrl
+  fileType?: string; // e.g. pdf, doc, image, text
+  uploadedAt: string;
+  notes?: string;
 }
 
 export interface Project {
@@ -53,6 +70,7 @@ export interface Project {
   duration?: string;
   budget?: number;
   createdAt?: string;
+  documents?: ProjectDoc[];
 }
 
 export interface Transaction {
@@ -64,6 +82,11 @@ export interface Transaction {
   date: string;
   desc?: string;
   createdAt?: string;
+  document?: {
+    name: string;
+    fileData?: string;
+    fileType?: string;
+  };
 }
 
 export interface InstallmentStep {
@@ -88,4 +111,23 @@ export interface Installment {
   status: "open" | "closed";
   schedule: InstallmentStep[];
   createdAt?: string;
+  document?: {
+    name: string;
+    fileData?: string;
+    fileType?: string;
+  };
 }
+
+export interface Notification {
+  docId: string;
+  title: string;
+  body: string;
+  senderId: string;
+  senderName: string;
+  senderRole: "admin" | "company";
+  targetType: "all_companies" | "all_members" | "company_members";
+  targetCompanyId?: string;
+  createdAt: string;
+  readBy?: string[];
+}
+

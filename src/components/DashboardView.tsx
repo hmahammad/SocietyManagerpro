@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   collection,
   doc,
@@ -11,6 +11,7 @@ import {
   query,
   where,
   increment,
+  collectionGroup,
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { User, Project, Transaction, Installment, HistoryEntry, InstallmentStep } from "../types";
@@ -42,6 +43,8 @@ import {
   Eye,
   Info,
   LogOut,
+  Paperclip,
+  Upload,
 } from "lucide-react";
 
 interface DashboardViewProps {
@@ -60,6 +63,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
   const [projects, setProjects] = useState<Project[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [installments, setInstallments] = useState<Installment[]>([]);
+  const [allHistories, setAllHistories] = useState<(HistoryEntry & { userDocId: string })[]>([]);
   const [totalArrearsAmount, setTotalArrearsAmount] = useState<number>(0);
   const [arrearsLoading, setArrearsLoading] = useState<boolean>(false);
 
@@ -93,9 +97,18 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editingInstallment, setEditingInstallment] = useState<Installment | null>(null);
   const [showProjectDetails, setShowProjectDetails] = useState<Project | null>(null);
+  const currentProject = showProjectDetails
+    ? (projects.find((p) => p.id === showProjectDetails.id) || showProjectDetails)
+    : null;
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [editingUserShare, setEditingUserShare] = useState<User | null>(null);
   const [customShareValue, setCustomShareValue] = useState<string>("");
+  const [confirmState, setConfirmState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Dynamic Add Form States
   // 1. New Investment form
@@ -105,6 +118,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
   const [newInvestAmount, setNewInvestAmount] = useState<number>(0);
   const [newInvestDate, setNewInvestDate] = useState(new Date().toISOString().split("T")[0]);
   const [newInvestMemo, setNewInvestMemo] = useState("");
+  const [newInvestProjectId, setNewInvestProjectId] = useState<string>("");
   const [selectedUserSavingsArrears, setSelectedUserSavingsArrears] = useState<number>(0);
   const [selectedUserInstallmentArrears, setSelectedUserInstallmentArrears] = useState<number>(0);
 
@@ -125,6 +139,17 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
   const [newProjBudget, setNewProjBudget] = useState<number>(0);
   const [newProjLocation, setNewProjLocation] = useState("");
   const [newProjDesc, setNewProjDesc] = useState("");
+
+  // Project Document states
+  const [docUploadLoading, setDocUploadLoading] = useState(false);
+  const [newDocName, setNewDocName] = useState("");
+  const [newDocNotes, setNewDocNotes] = useState("");
+  const [newDocFile, setNewDocFile] = useState<{ data: string; name: string; type: string } | null>(null);
+  const [readingDoc, setReadingDoc] = useState<{ name: string; notes?: string; fileData?: string; fileType?: string } | null>(null);
+
+  // Entry Upload files state
+  const [entryFile, setEntryFile] = useState<{ data: string; name: string; type: string } | null>(null);
+  const [entryFileLoading, setEntryFileLoading] = useState(false);
 
   // 4. New Installment form
   const [newInstCustomerName, setNewInstCustomer] = useState("");
@@ -175,11 +200,21 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       setLoading(false);
     });
 
+    const unsubAllHistory = onSnapshot(collectionGroup(db, "history"), (snap) => {
+      const list: (HistoryEntry & { userDocId: string })[] = [];
+      snap.forEach((d) => {
+        const parentUserDocId = d.ref.parent?.parent?.id || "";
+        list.push({ docId: d.id, userDocId: parentUserDocId, ...d.data() } as any);
+      });
+      setAllHistories(list);
+    });
+
     return () => {
       unsubUsers();
       unsubProjects();
       unsubAccounts();
       unsubInstallments();
+      unsubAllHistory();
     };
   }, []);
 
@@ -240,9 +275,117 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
     };
   }, [users, currentUser]);
 
-  // Recalculates stats on changes
-  const getDashboardSummary = () => {
-    // 1. Calculate global or company-specific base stats
+  // Background check and create missing savings arrears for all company members
+  useEffect(() => {
+    if (users.length === 0 || allHistories.length === 0) return;
+
+    // Only run if the user is company or admin or member
+    const targetMembers = users.filter((u) => {
+      if (u.role !== "member") return false;
+      if (currentUser.role === "admin") return true;
+      const targetCompanyId = currentUser.role === "company" ? currentUser.docId : currentUser.companyId;
+      return u.companyId === targetCompanyId;
+    });
+
+    const runAutoCheck = async () => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      for (const d of targetMembers) {
+        if (!d.InvestType || d.InvestType === "one_time") continue;
+        if (!d.investDate || !d.investAmount || Number(d.investAmount) <= 0) continue;
+
+        const investAmount = Number(d.investAmount);
+        const investDateObj = new Date(d.investDate);
+        const dayOfMonth = investDateObj.getDate();
+
+        // Get this member's history entries
+        const existingDocs = allHistories.filter((h) => h.userDocId === d.docId);
+        const existingKeys = new Set(existingDocs.map((h) => h.arrearsKey).filter(Boolean));
+
+        const startDate = new Date(d.createdAt || d.joinedDate || investDateObj.getTime());
+        startDate.setDate(1);
+
+        const toAdd = [];
+
+        if (d.InvestType === "monthly") {
+          let cur = new Date(startDate.getFullYear(), startDate.getMonth(), dayOfMonth);
+          while (cur <= today) {
+            const key = `arrears-${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`;
+            if (!existingKeys.has(key)) {
+              // Check if a real payment was made this month
+              const hasPayment = existingDocs.some((h) => {
+                if (h.type === "savings_arrears") return false;
+                if (!h.date) return false;
+                const hd = new Date(h.date);
+                return hd.getFullYear() === cur.getFullYear() && hd.getMonth() === cur.getMonth();
+              });
+              if (!hasPayment) {
+                toAdd.push({
+                  key,
+                  date: `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(
+                    dayOfMonth
+                  ).padStart(2, "0")}`,
+                  label: cur.toLocaleDateString("bn-BD", { month: "long", year: "numeric" }),
+                });
+              }
+            }
+            cur.setMonth(cur.getMonth() + 1);
+          }
+        } else if (d.InvestType === "yearly") {
+          let curYear = startDate.getFullYear();
+          while (curYear <= today.getFullYear()) {
+            const key = `arrears-${curYear}`;
+            if (!existingKeys.has(key)) {
+              const hasPayment = existingDocs.some((h) => {
+                if (h.type === "savings_arrears") return false;
+                if (!h.date) return false;
+                return new Date(h.date).getFullYear() === curYear;
+              });
+              if (!hasPayment) {
+                toAdd.push({
+                  key,
+                  date: `${curYear}-${String(investDateObj.getMonth() + 1).padStart(
+                    2,
+                    "0"
+                  )}-${String(dayOfMonth).padStart(2, "0")}`,
+                  label: `${curYear} সাল`,
+                });
+              }
+            }
+            curYear++;
+          }
+        }
+
+        if (toAdd.length > 0) {
+          const historyCol = collection(db, "users", d.docId, "history");
+          for (const item of toAdd) {
+            try {
+              await addDoc(historyCol, {
+                amount: 0,
+                arrears: investAmount,
+                date: item.date,
+                memo: `${item.label} সেভিংস জমা করা হয়নি`,
+                InvestType: d.InvestType,
+                type: "savings_arrears",
+                arrearsKey: item.key,
+                createdAt: new Date().toISOString(),
+              });
+              console.log(`Auto-added missing arrears for member ${d.name}: ${item.key}`);
+            } catch (err) {
+              console.error(`Failed to auto-add arrears for member ${d.name}:`, err);
+            }
+          }
+        }
+      }
+    };
+
+    runAutoCheck();
+  }, [users, allHistories, currentUser]);
+
+  // Helper to calculate project investments, member shares, and individual member expenses/income
+  const getProjectInvestmentsAndShares = () => {
+    // 1. Filter company members
     const companyMembers = users.filter((u) => {
       if (u.role !== "member") return false;
       if (currentUser.role === "admin") return true;
@@ -250,23 +393,204 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       return u.companyId === targetCompanyId;
     });
 
-    const globalTotalDeposit = companyMembers.reduce((sum, u) => sum + Number(u.amount || 0), 0);
+    // 2. Filter company projects
+    const companyProjects = projects.filter((p) => {
+      if (currentUser.role === "admin") return true;
+      const targetCompanyId = currentUser.role === "company" ? currentUser.docId : currentUser.companyId;
+      return p.companyId === targetCompanyId;
+    });
 
+    // 3. Keep set of member doc IDs for quick lookup
+    const memberDocIds = new Set(companyMembers.map((u) => u.docId));
+
+    // 4. Map each history entry to their parent user
+    const companyHistories = allHistories.filter((h) => memberDocIds.has(h.userDocId));
+
+    // 5. For each member, compute their total special project investments in history
+    const memberSpecialInvMap: Record<string, Record<string, number>> = {}; // userDocId -> { projectId -> amount }
+    const memberTotalSpecialInv: Record<string, number> = {}; // userDocId -> total special amount
+
+    companyHistories.forEach((h) => {
+      if (h.type === "savings_arrears") return;
+      const amt = Number(h.amount || 0);
+      if (amt <= 0) return;
+
+      const uId = h.userDocId;
+      if (!memberSpecialInvMap[uId]) memberSpecialInvMap[uId] = {};
+      
+      // If it is targeted to a specific project
+      if (h.projectId && h.projectId !== "company") {
+        memberSpecialInvMap[uId][h.projectId] = (memberSpecialInvMap[uId][h.projectId] || 0) + amt;
+        memberTotalSpecialInv[uId] = (memberTotalSpecialInv[uId] || 0) + amt;
+      }
+    });
+
+    // 6. For each business member, calculate their special investments per project, and their general investment
+    const memberGeneralInv: Record<string, number> = {}; // userDocId -> general amount
+    const memberProjectsInv: Record<string, Record<string, number>> = {}; // userDocId -> { projectId -> participating amount }
+    const projectTotalParticipating: Record<string, number> = {}; // projectId -> total participating amount
+    let totalGeneralCompanyPool = 0;
+
+    companyMembers.forEach((u) => {
+      const uAmt = Number(u.amount || 0);
+      if (u.accountType === "saving") return;
+
+      const totalSpecial = memberTotalSpecialInv[u.docId] || 0;
+      const generalAmt = Math.max(0, uAmt - totalSpecial);
+      memberGeneralInv[u.docId] = generalAmt;
+      totalGeneralCompanyPool += generalAmt;
+
+      memberProjectsInv[u.docId] = {};
+      companyProjects.forEach((p) => {
+        const specAmt = (memberSpecialInvMap[u.docId] || {})[p.id] || 0;
+        const partAmt = specAmt + generalAmt;
+        memberProjectsInv[u.docId][p.id] = partAmt;
+        projectTotalParticipating[p.id] = (projectTotalParticipating[p.id] || 0) + partAmt;
+      });
+    });
+
+    // 7. Compute project-specific shares for each business member
+    const memberProjectsShare: Record<string, Record<string, number>> = {}; // userDocId -> { projectId -> share fraction }
+
+    companyMembers.forEach((u) => {
+      memberProjectsShare[u.docId] = {};
+      if (u.accountType === "saving") {
+        companyProjects.forEach((p) => {
+          memberProjectsShare[u.docId][p.id] = 0;
+        });
+        return;
+      }
+
+      companyProjects.forEach((p) => {
+        let share = 0;
+        if (u.customShare !== undefined && u.customShare !== null) {
+          share = u.customShare / 100;
+        } else {
+          const partAmt = (memberProjectsInv[u.docId] || {})[p.id] || 0;
+          const projTotal = projectTotalParticipating[p.id] || 0;
+          share = projTotal > 0 ? partAmt / projTotal : 0;
+        }
+        memberProjectsShare[u.docId][p.id] = share;
+      });
+    });
+
+    // 8. Filter company transactions
     const companyTransactions = transactions.filter((t) => {
       if (currentUser.role === "admin") return true;
       const targetCompanyId = currentUser.role === "company" ? currentUser.docId : currentUser.companyId;
-      // Transactions are linked to projects. Let's find if project belongs to company
       const p = projects.find((proj) => proj.id === t.projectId);
       return p && p.companyId === targetCompanyId;
     });
 
-    const totalExpense = companyTransactions
-      .filter((t) => t.type === "expense")
-      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    // 9. Compute project profit summary
+    const projSummary: Record<string, { expense: number; sale: number }> = {};
+    companyProjects.forEach((p) => {
+      projSummary[p.id] = { expense: 0, sale: 0 };
+    });
+    companyTransactions.forEach((t) => {
+      if (!projSummary[t.projectId]) {
+        projSummary[t.projectId] = { expense: 0, sale: 0 };
+      }
+      const amount = Number(t.amount || 0);
+      if (t.type === "expense") projSummary[t.projectId].expense += amount;
+      else if (t.type === "sale") projSummary[t.projectId].sale += amount;
+    });
 
-    const projectIncome = companyTransactions
-      .filter((t) => t.type === "sale")
-      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    // 10. Filter company installments to get installment incomes (downpayment + paid monthly steps)
+    const companyInstallments = installments.filter((inst) => {
+      if (currentUser.role === "admin") return true;
+      const targetCompanyId = currentUser.role === "company" ? currentUser.docId : currentUser.companyId;
+      return inst.companyId === targetCompanyId;
+    });
+
+    // Installment incomes are usually associated with a project if the installment's productName matches project name
+    const projectInstallmentIncome: Record<string, number> = {};
+    companyProjects.forEach((p) => {
+      projectInstallmentIncome[p.id] = 0;
+    });
+
+    companyInstallments.forEach((inst) => {
+      const proj = companyProjects.find((p) => p.name === inst.productName);
+      if (proj) {
+        const downPayment = Number(inst.downPayment || 0);
+        const paidSchedule = (inst.schedule || [])
+          .filter((s) => s.status === "paid")
+          .reduce((sum, s) => sum + Number(s.amount || 0), 0);
+        projectInstallmentIncome[proj.id] += downPayment + paidSchedule;
+      }
+    });
+
+    // 11. Compute each member's personal shares of expenses and incomes
+    const memberCalculations: Record<string, { expense: number; income: number; shareText: string }> = {};
+
+    companyMembers.forEach((u) => {
+      if (u.accountType === "saving") {
+        memberCalculations[u.docId] = { expense: 0, income: 0, shareText: "0.0%" };
+        return;
+      }
+
+      let userTotalExpense = 0;
+      let userTotalIncome = 0;
+
+      companyProjects.forEach((p) => {
+        const pShare = (memberProjectsShare[u.docId] || {})[p.id] || 0;
+        const pExpense = (projSummary[p.id] || { expense: 0 }).expense;
+        const pSaleIncome = (projSummary[p.id] || { sale: 0 }).sale;
+        const pInstIncome = projectInstallmentIncome[p.id] || 0;
+        const pTotalIncome = pSaleIncome + pInstIncome;
+
+        userTotalExpense += pExpense * pShare;
+        userTotalIncome += pTotalIncome * pShare;
+      });
+
+      const uAmt = Number(u.amount || 0);
+      const businessMembers = companyMembers.filter((m) => m.accountType !== "saving");
+      const businessTotalDeposit = businessMembers.reduce((sum, m) => sum + Number(m.amount || 0), 0);
+      
+      let displayShare = 0;
+      if (u.customShare !== undefined && u.customShare !== null) {
+        displayShare = u.customShare / 100;
+      } else {
+        displayShare = businessTotalDeposit > 0 ? uAmt / businessTotalDeposit : 0;
+      }
+
+      memberCalculations[u.docId] = {
+        expense: parseFloat(userTotalExpense.toFixed(2)),
+        income: parseFloat(userTotalIncome.toFixed(2)),
+        shareText: (displayShare * 100).toFixed(1) + "%",
+      };
+    });
+
+    return {
+      companyMembers,
+      companyProjects,
+      projSummary,
+      projectTotalParticipating,
+      totalGeneralCompanyPool,
+      memberSpecialInvMap,
+      memberTotalSpecialInv,
+      memberGeneralInv,
+      memberProjectsShare,
+      memberCalculations,
+      projectInstallmentIncome,
+    };
+  };
+
+  // Recalculates stats on changes
+  const getDashboardSummary = () => {
+    const {
+      companyMembers,
+      projSummary,
+      memberCalculations,
+    } = getProjectInvestmentsAndShares();
+
+    const globalTotalDeposit = companyMembers.reduce((sum, u) => sum + Number(u.amount || 0), 0);
+
+    const businessMembers = companyMembers.filter((u) => u.accountType !== "saving");
+    const businessTotalDeposit = businessMembers.reduce((sum, u) => sum + Number(u.amount || 0), 0);
+
+    const totalExpense = Object.values(projSummary).reduce((sum, s) => sum + s.expense, 0);
+    const projectIncome = Object.values(projSummary).reduce((sum, s) => sum + s.sale, 0);
 
     const companyInstallments = installments.filter((inst) => {
       if (currentUser.role === "admin") return true;
@@ -297,29 +621,21 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
 
     // 2. Adjust stats if logged-in user is a member with "only own data" view
     if (currentUser.role === "member" && !currentUser.canSeeAllData) {
+      const calc = memberCalculations[currentUser.docId] || { expense: 0, income: 0 };
       const myUser = users.find((u) => u.docId === currentUser.docId) || currentUser;
       const myDeposit = Number(myUser.amount || 0);
-
-      let share = 0;
-      if (myUser.customShare !== undefined && myUser.customShare !== null) {
-        share = myUser.customShare / 100;
-      } else {
-        share = globalTotalDeposit > 0 ? myDeposit / globalTotalDeposit : 0;
-      }
-
-      const myExpense = totalExpense * share;
-      const myIncome = Math.max(0, totalIncome * share);
-      const myBalance = myDeposit - myExpense + myIncome;
+      const myBalance = myDeposit - calc.expense + calc.income;
 
       return {
         totalDeposit: myDeposit,
-        totalExpense: myExpense,
-        totalIncome: myIncome,
+        totalExpense: calc.expense,
+        totalIncome: calc.income,
         totalBalance: myBalance,
         totalDue: 0, // Restricted members don't see installment due
         globalTotalDeposit,
         globalTotalExpense: totalExpense,
         globalTotalIncome: totalIncome,
+        businessTotalDeposit,
       };
     }
 
@@ -332,6 +648,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       globalTotalDeposit,
       globalTotalExpense: totalExpense,
       globalTotalIncome: totalIncome,
+      businessTotalDeposit,
     };
   };
 
@@ -344,7 +661,22 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
     globalTotalDeposit,
     globalTotalExpense,
     globalTotalIncome,
+    businessTotalDeposit,
   } = getDashboardSummary();
+
+  const {
+    companyMembers,
+    companyProjects,
+    projSummary,
+    projectTotalParticipating,
+    totalGeneralCompanyPool,
+    memberSpecialInvMap,
+    memberTotalSpecialInv,
+    memberGeneralInv,
+    memberProjectsShare,
+    memberCalculations,
+    projectInstallmentIncome,
+  } = getProjectInvestmentsAndShares();
 
   // Load user details/history modal
   const handleShowUserHistory = async (u: User) => {
@@ -495,44 +827,67 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
   // Dynamic selector values loading
   const handleNewInvestTargetChange = async (userId: string) => {
     setNewInvestTarget(userId);
-    setSelectedUserSavingsArrears(0);
-    setSelectedUserInstallmentArrears(0);
     if (!userId) return;
     const user = users.find((u) => u.docId === userId);
     if (user) {
       setNewInvestAcctType(user.accountType || "");
       setNewInvestMode(user.InvestType || "");
+    }
+  };
 
-      // Calculate/Fetch Savings Arrears
+  // Reactively calculate savings and installment arrears for the selected user in the investment form
+  useEffect(() => {
+    if (!newInvestTarget) {
+      setSelectedUserSavingsArrears(0);
+      setSelectedUserInstallmentArrears(0);
+      return;
+    }
+
+    const user = users.find((u) => u.docId === newInvestTarget);
+    if (!user) return;
+
+    let isSubscribed = true;
+
+    // 1. Calculate savings arrears (any arrears in user history)
+    const fetchSavings = async () => {
       try {
-        const histSnap = await getDocs(collection(db, "users", userId, "history"));
+        const histSnap = await getDocs(collection(db, "users", newInvestTarget, "history"));
+        if (!isSubscribed) return;
         let savingsArr = 0;
         histSnap.forEach((doc) => {
-          const h = doc.data();
+          const h = doc.data() as any;
           if (h.type === "savings_arrears") {
             savingsArr += Number(h.arrears || 0);
           }
         });
         setSelectedUserSavingsArrears(savingsArr);
       } catch (e) {
-        console.error("Error fetching user history for arrears:", e);
+        console.error("Error fetching savings arrears:", e);
       }
+    };
+    fetchSavings();
 
-      // Calculate Installment Arrears
-      const userInsts = installments.filter((inst) => inst.customerName === user.name && inst.status !== "closed");
-      let instArr = 0;
-      userInsts.forEach((inst) => {
-        const paidTotal = (inst.schedule || [])
-          .filter((s) => s.status === "paid")
-          .reduce((sum, s) => sum + Number(s.amount || 0), 0);
-        const remainingDue = Number(inst.totalAmount || 0) - Number(inst.downPayment || 0) - paidTotal;
-        if (remainingDue > 0) {
-          instArr += remainingDue;
+    // 2. Calculate installment arrears up to newInvestDate
+    const comparisonDate = newInvestDate || new Date().toISOString().split("T")[0];
+    const userInsts = installments.filter((inst) => inst.customerName === user.name && inst.status !== "closed");
+    let instArr = 0;
+    userInsts.forEach((inst) => {
+      (inst.schedule || []).forEach((step) => {
+        // Only count unpaid steps that are due on or before comparisonDate
+        if (step.dueDate <= comparisonDate && step.status !== "paid") {
+          const stepTotal = Number(step.amount || 0);
+          const stepPaid = Number(step.paidAmount || 0);
+          const stepDue = Math.max(0, stepTotal - stepPaid);
+          instArr += stepDue;
         }
       });
-      setSelectedUserInstallmentArrears(instArr);
-    }
-  };
+    });
+    setSelectedUserInstallmentArrears(instArr);
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [newInvestTarget, newInvestDate, installments, users]);
 
   // Submit operations
   const handleSubmitEntry = async () => {
@@ -620,6 +975,12 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
             for (let i = 0; i < scheduleCopy.length; i++) {
               if (remaining <= 0) break;
               const step = scheduleCopy[i];
+
+              // Skip steps that are not due yet (due date is in the future)
+              if (step.dueDate > newInvestDate) {
+                continue;
+              }
+
               const stepTotal = Number(step.amount || 0);
               const stepPaid = Number(step.paidAmount || 0);
               const stepDue = Math.max(0, stepTotal - stepPaid);
@@ -657,16 +1018,27 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
           }
         }
 
-        // 3. Write remaining amount to new investment
-        if (remaining > 0) {
-          await addDoc(collection(db, "users", newInvestTarget, "history"), {
+        // 3. Write remaining amount to new investment, OR if a document was uploaded but remaining is 0, write a document receipt entry
+        if (remaining > 0 || entryFile) {
+          const selectedProj = projects.find((p) => p.id === newInvestProjectId);
+          const payload: any = {
             amount: remaining,
             date: newInvestDate,
-            memo: newInvestMemo || "N/A",
+            memo: remaining > 0 ? (newInvestMemo || "N/A") : `${newInvestMemo || "রশিদ / মেমো ফাইল"} (বকেয়া পরিশোধ রশিদ)`,
             InvestType: newInvestMode,
             accountType: newInvestAcctType,
             createdAt: new Date().toISOString(),
-          });
+            projectId: selectedProj ? selectedProj.id : "company",
+            projectName: selectedProj ? selectedProj.name : "কোম্পানি (সাধারণ)",
+          };
+          if (entryFile) {
+            payload.document = {
+              name: entryFile.name,
+              fileData: entryFile.data,
+              fileType: entryFile.type,
+            };
+          }
+          await addDoc(collection(db, "users", newInvestTarget, "history"), payload);
         }
 
         // 4. Update the user's total investment balance
@@ -685,8 +1057,10 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
         setNewInvestTarget("");
         setNewInvestAmount(0);
         setNewInvestMemo("");
+        setNewInvestProjectId("");
         setSelectedUserSavingsArrears(0);
         setSelectedUserInstallmentArrears(0);
+        setEntryFile(null);
         setShowAddModal(false);
       } else if (addMode === "transaction") {
         if (!newTrxProject || !newTrxAmount || newTrxAmount <= 0 || !newTrxDate) {
@@ -696,7 +1070,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
         const proj = projects.find((p) => p.id === newTrxProject);
         if (!proj) return;
 
-        await addDoc(collection(db, "accounts"), {
+        const payload: any = {
           projectId: newTrxProject,
           projectName: proj.name,
           type: newTrxType,
@@ -704,11 +1078,21 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
           date: newTrxDate,
           desc: newTrxDesc || "",
           createdAt: new Date().toISOString(),
-        });
+        };
+        if (entryFile) {
+          payload.document = {
+            name: entryFile.name,
+            fileData: entryFile.data,
+            fileType: entryFile.type,
+          };
+        }
+
+        await addDoc(collection(db, "accounts"), payload);
 
         // Reset
         setNewTrxAmount(0);
         setNewTrxDesc("");
+        setEntryFile(null);
         setShowAddModal(false);
       } else if (addMode === "project") {
         if (!newProjName) {
@@ -716,7 +1100,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
           return;
         }
 
-        await addDoc(collection(db, "projects"), {
+        const payload: any = {
           name: newProjName,
           desc: newProjDesc,
           type: newProjType,
@@ -728,7 +1112,21 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
           budget: Number(newProjBudget) || 0,
           createdAt: new Date().toISOString(),
           companyId: currentUser.role === "company" ? currentUser.docId : (currentUser.companyId || ""),
-        });
+        };
+        if (entryFile) {
+          payload.documents = [
+            {
+              id: "doc_" + Date.now(),
+              name: entryFile.name,
+              fileData: entryFile.data,
+              fileType: entryFile.type,
+              uploadedAt: new Date().toISOString().split("T")[0],
+              notes: "প্রজেক্ট চালুকালীন চুক্তিপত্র / মেমো",
+            }
+          ];
+        }
+
+        await addDoc(collection(db, "projects"), payload);
 
         // Reset
         setNewProjName("");
@@ -736,6 +1134,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
         setNewProjLocation("");
         setNewProjBudget(0);
         setNewProjDuration("");
+        setEntryFile(null);
         setShowAddModal(false);
       } else if (addMode === "installment") {
         if (!newInstCustomerName || !newInstProductName || !newInstTotalAmount || !newInstMonths || !newInstStartDate) {
@@ -761,7 +1160,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
           });
         }
 
-        await addDoc(collection(db, "installments"), {
+        const payload: any = {
           customerName: newInstCustomerName,
           productName: newInstProductName,
           totalAmount: newInstTotalAmount,
@@ -774,7 +1173,16 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
           schedule,
           createdAt: new Date().toISOString(),
           companyId: currentUser.role === "company" ? currentUser.docId : (currentUser.companyId || ""),
-        });
+        };
+        if (entryFile) {
+          payload.document = {
+            name: entryFile.name,
+            fileData: entryFile.data,
+            fileType: entryFile.type,
+          };
+        }
+
+        await addDoc(collection(db, "installments"), payload);
 
         // Reset
         setNewInstCustomer("");
@@ -782,6 +1190,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
         setNewInstTotal(0);
         setNewInstDown(0);
         setNewInstMonths(0);
+        setEntryFile(null);
         setShowAddModal(false);
       }
     } catch (e) {
@@ -1024,81 +1433,221 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
   };
 
   // Delete Operations
-  const handleDeleteInvestHistory = async (h: HistoryEntry) => {
+  const handleDeleteInvestHistory = (h: HistoryEntry) => {
     if (!selectedUser) return;
-    if (!confirm("লেনদেনটি স্থায়ীভাবে ডিলিট করতে চান?")) return;
-    try {
-      const docRef = doc(db, "users", selectedUser.docId, "history", h.docId);
-      const amt = Number(h.amount || 0);
+    setConfirmState({
+      isOpen: true,
+      title: "লেনদেন ডিলিট নিশ্চিতকরণ",
+      message: "লেনদেনটি স্থায়ীভাবে ডিলিট করতে চান?",
+      onConfirm: async () => {
+        try {
+          const docRef = doc(db, "users", selectedUser.docId, "history", h.docId);
+          const amt = Number(h.amount || 0);
 
-      // Deduct from overall member deposit
-      await updateDoc(doc(db, "users", selectedUser.docId), {
-        amount: increment(-amt),
+          // Deduct from overall member deposit
+          await updateDoc(doc(db, "users", selectedUser.docId), {
+            amount: increment(-amt),
+          });
+
+          await deleteDoc(docRef);
+          handleShowUserHistory(selectedUser);
+        } catch (e) {
+          console.error(e);
+          alert("ডিলিট করা যায়নি");
+        } finally {
+          setConfirmState(null);
+        }
+      }
+    });
+  };
+
+  const handleDeleteTrx = (t: Transaction) => {
+    setConfirmState({
+      isOpen: true,
+      title: "লেনদেন ডিলিট নিশ্চিতকরণ",
+      message: "লেনদেনটি স্থায়ীভাবে ডিলিট করতে চান?",
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, "accounts", t.id));
+          if (selectedProject) handleShowProjectHistory(selectedProject);
+        } catch (e) {
+          console.error(e);
+          alert("ডিলিট করা যায়নি");
+        } finally {
+          setConfirmState(null);
+        }
+      }
+    });
+  };
+
+  const handleDeleteProject = (p: Project) => {
+    setConfirmState({
+      isOpen: true,
+      title: "প্রজেক্ট ডিলিট নিশ্চিতকরণ",
+      message: `"${p.name}" প্রজেক্টটি ডিলিট করলে এর সকল লেনদেন ডিলিট হয়ে যাবে। নিশ্চিত?`,
+      onConfirm: async () => {
+        try {
+          // Delete project document
+          await deleteDoc(doc(db, "projects", p.id));
+
+          // Batch delete associated transaction files
+          const trxsSnap = await getDocs(query(collection(db, "accounts"), where("projectId", "==", p.id)));
+          for (const d of trxsSnap.docs) {
+            await deleteDoc(d.ref);
+          }
+
+          setSelectedProject(null);
+          setShowHistoryModal(false);
+        } catch (e) {
+          console.error(e);
+          alert("ডিলিট করা যায়নি");
+        } finally {
+          setConfirmState(null);
+        }
+      }
+    });
+  };
+
+  const handleDeleteInstallment = (inst: Installment) => {
+    setConfirmState({
+      isOpen: true,
+      title: "কিস্তি ডিলিট নিশ্চিতকরণ",
+      message: `"${inst.customerName}" কিস্তি কন্ট্যাক্টটি ডিলিট করতে চান?`,
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, "installments", inst.id));
+          setSelectedProjectInstallment(null);
+          setEditingInstallment(null);
+        } catch (e) {
+          console.error(e);
+          alert("ডিলিট করা যায়নি");
+        } finally {
+          setConfirmState(null);
+        }
+      }
+    });
+  };
+
+  // Document Management Handlers
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setNewDocFile(null);
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert("ফাইলের সাইজ ৫ মেগাবাইটের বেশি হওয়া যাবে না।");
+      e.target.value = "";
+      setNewDocFile(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setNewDocFile({
+        data: reader.result as string,
+        name: file.name,
+        type: file.type || "application/octet-stream",
+      });
+    };
+    reader.onerror = (err) => {
+      console.error("FileReader error:", err);
+      alert("ফাইল পড়তে সমস্যা হয়েছে।");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleEntryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setEntryFile(null);
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert("ফাইলের সাইজ ৫ মেগাবাইটের বেশি হওয়া যাবে না।");
+      e.target.value = "";
+      setEntryFile(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setEntryFile({
+        data: reader.result as string,
+        name: file.name,
+        type: file.type || "application/octet-stream",
+      });
+    };
+    reader.onerror = (err) => {
+      console.error("FileReader error:", err);
+      alert("ফাইল পড়তে সমস্যা হয়েছে।");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAddDocument = async () => {
+    if (!currentProject) return;
+    if (!newDocName.trim()) {
+      alert("ডকুমেন্টের নাম বা শিরোনাম লিখুন");
+      return;
+    }
+
+    setDocUploadLoading(true);
+    try {
+      const docId = "doc_" + Date.now();
+      const newDocObj = {
+        id: docId,
+        name: newDocName.trim(),
+        fileData: newDocFile?.data || "",
+        fileType: newDocFile?.type || "",
+        uploadedAt: new Date().toISOString().split("T")[0],
+        notes: newDocNotes.trim(),
+      };
+
+      const existingDocs = currentProject.documents || [];
+      const updatedDocs = [...existingDocs, newDocObj];
+
+      await updateDoc(doc(db, "projects", currentProject.id), {
+        documents: updatedDocs,
       });
 
-      await deleteDoc(docRef);
-      handleShowUserHistory(selectedUser);
-    } catch (e) {
-      console.error(e);
-      alert("ডিলিট করা যায়নি");
+      setNewDocName("");
+      setNewDocNotes("");
+      setNewDocFile(null);
+      
+      const fileInput = document.getElementById("doc-file-input") as HTMLInputElement;
+      if (fileInput) fileInput.value = "";
+
+      alert("ডকুমেন্ট সফলভাবে আপলোড করা হয়েছে!");
+    } catch (err) {
+      console.error("Error uploading document:", err);
+      alert("ডকুমেন্ট আপলোড করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।");
+    } finally {
+      setDocUploadLoading(false);
     }
   };
 
-  const handleDeleteTrx = async (t: Transaction) => {
-    if (!confirm("লেনদেনটি স্থায়ীভাবে ডিলিট করতে চান?")) return;
-    try {
-      await deleteDoc(doc(db, "accounts", t.id));
-      if (selectedProject) handleShowProjectHistory(selectedProject);
-    } catch (e) {
-      console.error(e);
-      alert("ডিলিট করা যায়নি");
-    }
-  };
+  const handleDeleteDocument = async (docId: string) => {
+    if (!currentProject) return;
+    setConfirmState({
+      isOpen: true,
+      title: "ডকুমেন্ট ডিলিট নিশ্চিতকরণ",
+      message: "এই ডকুমেন্টটি স্থায়ীভাবে ডিলিট করতে চান?",
+      onConfirm: async () => {
+        try {
+          const existingDocs = currentProject.documents || [];
+          const updatedDocs = existingDocs.filter((d) => d.id !== docId);
 
-  const handleDeleteProject = async (p: Project) => {
-    if (!confirm(`"${p.name}" প্রজেক্টটি ডিলিট করলে এর সকল লেনদেন ডিলিট হয়ে যাবে। নিশ্চিত?`)) return;
-    try {
-      // Delete project document
-      await deleteDoc(doc(db, "projects", p.id));
-
-      // Batch delete associated transaction files
-      const trxsSnap = await getDocs(query(collection(db, "accounts"), where("projectId", "==", p.id)));
-      for (const d of trxsSnap.docs) {
-        await deleteDoc(d.ref);
-      }
-
-      setSelectedProject(null);
-      setShowHistoryModal(false);
-    } catch (e) {
-      console.error(e);
-      alert("ডিলিট করা যায়নি");
-    }
-  };
-
-  const handleDeleteInstallment = async (inst: Installment) => {
-    if (!confirm(`"${inst.customerName}" কিস্তি কন্ট্যাক্টটি ডিলিট করতে চান?`)) return;
-    try {
-      await deleteDoc(doc(db, "installments", inst.id));
-      setSelectedProjectInstallment(null);
-    } catch (e) {
-      console.error(e);
-      alert("ডিলিট করা যায়নি");
-    }
-  };
-
-  // Project profit summary
-  const getProjectsProfitSummary = () => {
-    const summary: Record<string, { expense: 0; sale: 0 }> = {};
-    transactions.forEach((t) => {
-      if (!summary[t.projectId]) summary[t.projectId] = { expense: 0, sale: 0 };
-      const amount = Number(t.amount || 0);
-      if (t.type === "expense") summary[t.projectId].expense += amount;
-      else if (t.type === "sale") summary[t.projectId].sale += amount;
+          await updateDoc(doc(db, "projects", currentProject.id), {
+            documents: updatedDocs,
+          });
+        } catch (err) {
+          console.error("Error deleting document:", err);
+          alert("ডকুমেন্ট ডিলিট করতে সমস্যা হয়েছে।");
+        } finally {
+          setConfirmState(null);
+        }
+      },
     });
-    return summary;
   };
-
-  const projSummary = getProjectsProfitSummary();
 
   const handleFabClick = () => {
     if (activeTab === "invest") {
@@ -1239,15 +1788,8 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                   })
                   .map((u) => {
                     const uAmt = parseFloat(String(u.amount || 0)) || 0;
-                    let share = 0;
-                    if (u.customShare !== undefined && u.customShare !== null) {
-                      share = u.customShare / 100;
-                    } else {
-                      share = globalTotalDeposit > 0 ? uAmt / globalTotalDeposit : 0;
-                    }
-                    const userExpense = globalTotalExpense * share;
-                    const userIncome = Math.max(0, globalTotalIncome * share);
-                    const finalBalance = uAmt - userExpense + userIncome;
+                    const calc = memberCalculations[u.docId] || { expense: 0, income: 0, shareText: "0.0%" };
+                    const finalBalance = u.accountType === "saving" ? uAmt : uAmt - calc.expense + calc.income;
 
                     return (
                       <tr
@@ -1257,9 +1799,9 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                       >
                         <td className="p-3 font-bold text-blue-700">{u.name}</td>
                         <td className="p-3 text-right font-bold text-slate-700">৳{formatNum(uAmt)}</td>
-                        <td className="p-3 text-center text-blue-600 font-bold">{(share * 100).toFixed(1)}%</td>
-                        <td className="p-3 text-right text-rose-500 font-bold">৳{formatNum(userExpense)}</td>
-                        <td className="p-3 text-right text-emerald-600 font-bold">৳{formatNum(userIncome)}</td>
+                        <td className="p-3 text-center text-blue-600 font-bold">{calc.shareText}</td>
+                        <td className="p-3 text-right text-rose-500 font-bold">৳{formatNum(calc.expense)}</td>
+                        <td className="p-3 text-right text-emerald-600 font-bold">৳{formatNum(calc.income)}</td>
                         <td className={`p-3 text-right font-bold ${finalBalance >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
                           ৳{formatNum(finalBalance)}
                         </td>
@@ -1278,6 +1820,9 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
               <thead className="bg-slate-50 text-slate-500 uppercase">
                 <tr className="border-b border-slate-200">
                   <th className="p-3 text-left">প্রজেক্ট</th>
+                  <th className="p-3 text-right">বাজেট</th>
+                  <th className="p-3 text-right">মোট ইনভেস্ট</th>
+                  <th className="p-3 text-right">অতিরিক্ত/বাকি</th>
                   <th className="p-3 text-right">খরচ</th>
                   <th className="p-3 text-right">আয়</th>
                   <th className="p-3 text-right">লাভ/ক্ষতি</th>
@@ -1292,31 +1837,46 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                     return p.companyId === targetCompanyId;
                   })
                   .map((p) => {
-                  const s = projSummary[p.id] || { expense: 0, sale: 0 };
-                  const profit = s.sale - s.expense;
-                  return (
-                    <tr
-                      key={p.id}
-                      onClick={() => handleShowProjectHistory(p)}
-                      className="hover:bg-slate-50/80 cursor-pointer font-medium"
-                    >
-                      <td className="p-3 font-bold text-blue-700">{p.name}</td>
-                      <td className="p-3 text-right text-rose-500 font-bold">৳{formatNum(s.expense)}</td>
-                      <td className="p-3 text-right text-emerald-600 font-bold">৳{formatNum(s.sale)}</td>
-                      <td className={`p-3 text-right font-bold ${profit >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
-                        ৳{formatNum(profit)}
-                      </td>
-                      <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => setShowProjectDetails(p)}
-                          className="px-2.5 py-1 text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg border border-blue-100 font-bold transition flex items-center gap-0.5 mx-auto"
-                        >
-                          <Info className="w-3 h-3" /> ভিউ
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                    const s = projSummary[p.id] || { expense: 0, sale: 0 };
+                    const profit = s.sale - s.expense;
+                    const totalInv = projectTotalParticipating[p.id] || 0;
+                    const budget = p.budget || 0;
+                    const diff = totalInv - budget;
+
+                    return (
+                      <tr
+                        key={p.id}
+                        onClick={() => handleShowProjectHistory(p)}
+                        className="hover:bg-slate-50/80 cursor-pointer font-medium"
+                      >
+                        <td className="p-3 font-bold text-blue-700">{p.name}</td>
+                        <td className="p-3 text-right font-bold text-slate-600">৳{formatNum(budget)}</td>
+                        <td className="p-3 text-right font-bold text-blue-600">৳{formatNum(totalInv)}</td>
+                        <td className="p-3 text-right font-bold">
+                          {diff > 0 ? (
+                            <span className="text-amber-600 font-extrabold">+৳{formatNum(diff)} <span className="text-[10px] text-amber-500 font-medium">(অতিরিক্ত)</span></span>
+                          ) : diff < 0 ? (
+                            <span className="text-rose-500 font-extrabold">-৳{formatNum(Math.abs(diff))} <span className="text-[10px] text-rose-400 font-medium">(বাকি)</span></span>
+                          ) : (
+                            <span className="text-slate-400">৳০</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-right text-rose-500 font-bold">৳{formatNum(s.expense)}</td>
+                        <td className="p-3 text-right text-emerald-600 font-bold">৳{formatNum(s.sale)}</td>
+                        <td className={`p-3 text-right font-bold ${profit >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
+                          ৳{formatNum(profit)}
+                        </td>
+                        <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => setShowProjectDetails(p)}
+                            className="px-2.5 py-1 text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg border border-blue-100 font-bold transition flex items-center gap-0.5 mx-auto"
+                          >
+                            <Info className="w-3 h-3" /> ভিউ
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
@@ -1455,6 +2015,28 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                         )}
                       </div>
                     )}
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">ইনভেস্টের গন্তব্য (প্রজেক্ট)</label>
+                    <select
+                      value={newInvestProjectId}
+                      onChange={(e) => setNewInvestProjectId(e.target.value)}
+                      className="w-full border border-slate-200 p-3 rounded-xl mt-1 text-xs outline-none focus:border-indigo-500 font-semibold"
+                    >
+                      <option value="">কোম্পানি (সাধারণ / সকল প্রজেক্ট)</option>
+                      {projects
+                        .filter((p) => {
+                          if (currentUser.role === "admin") return true;
+                          const targetCompanyId = currentUser.role === "company" ? currentUser.docId : currentUser.companyId;
+                          return p.companyId === targetCompanyId;
+                        })
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                    </select>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -1791,6 +2373,55 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                   )}
                 </div>
               )}
+
+              {/* === COMMON MEMO/DOCUMENT UPLOAD INPUT === */}
+              <div className="border-t pt-4 mt-4 space-y-2">
+                <label className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1">
+                  <Paperclip className="w-3.5 h-3.5" />
+                  মেমো বা ডকুমেন্ট সংযুক্ত করুন (ঐচ্ছিক)
+                </label>
+                
+                {!entryFile ? (
+                  <div className="relative border border-dashed border-slate-300 hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/20 rounded-2xl p-4 transition-all text-center cursor-pointer group">
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
+                      onChange={handleEntryFileChange}
+                      className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                    />
+                    <div className="flex flex-col items-center gap-1.5 pointer-events-none">
+                      <Upload className="w-6 h-6 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                      <span className="text-xs font-bold text-slate-600 group-hover:text-indigo-600 transition-colors">
+                        ফাইল সিলেক্ট করুন বা ড্র্যাগ করে ছাড়ুন
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-medium">
+                        রশিদ ছবি, চুক্তিপত্র স্ক্যান কপি বা পিডিএফ (সর্বোচ্চ ৫ মেগাবাইট)
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 flex items-center justify-between gap-3 animate-fadeIn">
+                    <div className="flex items-center gap-2 overflow-hidden flex-1">
+                      <FileText className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                      <div className="text-left overflow-hidden">
+                        <p className="text-xs font-bold text-slate-700 truncate" title={entryFile.name}>
+                          {entryFile.name}
+                        </p>
+                        <p className="text-[9px] text-emerald-600 font-extrabold font-mono uppercase tracking-wider">
+                          সংযুক্ত ফাইল সফলভাবে লোড হয়েছে
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setEntryFile(null)}
+                      className="p-1.5 hover:bg-emerald-100 text-rose-500 rounded-xl transition cursor-pointer flex-shrink-0"
+                      title="ফাইলটি মুছে ফেলুন"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="p-5 border-t flex gap-3 bg-slate-50">
@@ -1802,8 +2433,11 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                 {saving ? "প্রসেসিং..." : "সেভ করুন"}
               </button>
               <button
-                onClick={() => setShowAddModal(false)}
-                className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3.5 rounded-2xl font-bold transition text-xs"
+                onClick={() => {
+                  setShowAddModal(false);
+                  setEntryFile(null);
+                }}
+                className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3.5 rounded-2xl font-bold transition text-xs cursor-pointer"
               >
                 বাতিল
               </button>
@@ -1937,6 +2571,20 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                               <p className={`text-xs font-semibold mt-0.5 ${isArrears ? "text-rose-700" : "text-slate-600"}`}>
                                 {isArrears ? h.memo : `মেমো: ${h.memo || "N/A"}`}
                               </p>
+                              {h.document && (
+                                <button
+                                  onClick={() => setReadingDoc({
+                                    name: h.document!.name,
+                                    fileData: h.document!.fileData,
+                                    fileType: h.document!.fileType,
+                                    notes: h.memo || "সংযুক্ত মেমো/ডকুমেন্ট"
+                                  })}
+                                  className="mt-1 flex items-center gap-1 text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-lg font-bold hover:bg-indigo-100 transition cursor-pointer"
+                                >
+                                  <Paperclip className="w-3 h-3 text-indigo-500" />
+                                  মেমো/রশিদ দেখুন
+                                </button>
+                              )}
                             </div>
                             <div className="flex items-center gap-3">
                               <p className={`font-extrabold text-xs ${isArrears ? "text-rose-600" : "text-emerald-600"}`}>
@@ -1980,6 +2628,20 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                           {t.type === "expense" ? "🔴 খরচ" : "🟢 আয়"}
                         </p>
                         {t.desc && <p className="text-[10px] text-slate-500 mt-0.5">{t.desc}</p>}
+                        {t.document && (
+                          <button
+                            onClick={() => setReadingDoc({
+                              name: t.document!.name,
+                              fileData: t.document!.fileData,
+                              fileType: t.document!.fileType,
+                              notes: t.desc || "সংযুক্ত মেমো/ডকুমেন্ট"
+                            })}
+                            className="mt-1 flex items-center gap-1 text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-lg font-bold hover:bg-indigo-100 transition cursor-pointer"
+                          >
+                            <Paperclip className="w-3 h-3 text-indigo-500" />
+                            মেমো/রশিদ দেখুন
+                          </button>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <p className={`font-extrabold text-xs ${t.type === "sale" ? "text-emerald-600" : "text-rose-500"}`}>
@@ -2044,6 +2706,26 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                 )}
               </div>
 
+              {selectedInstallment.document && (
+                <div className="bg-indigo-50/70 border border-indigo-100 p-2.5 rounded-xl flex items-center justify-between text-[11px] font-semibold mt-1">
+                  <span className="text-indigo-950 flex items-center gap-1.5 truncate">
+                    <Paperclip className="w-3.5 h-3.5 text-indigo-500" />
+                    চুক্তিপত্র/দলিল: {selectedInstallment.document.name}
+                  </span>
+                  <button
+                    onClick={() => setReadingDoc({
+                      name: selectedInstallment.document!.name,
+                      fileData: selectedInstallment.document!.fileData,
+                      fileType: selectedInstallment.document!.fileType,
+                      notes: `গ্রাহকঃ ${selectedInstallment.customerName}\nপণ্যঃ ${selectedInstallment.productName}`
+                    })}
+                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9px] font-bold transition flex items-center gap-0.5 cursor-pointer flex-shrink-0"
+                  >
+                    <Eye className="w-3 h-3" /> দেখুন
+                  </button>
+                </div>
+              )}
+
               {/* Tabs inside Installment modal */}
               <div className="flex border-b border-slate-200 mt-2">
                 <button
@@ -2069,113 +2751,150 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
 
             <div className="flex-1 overflow-y-auto p-5">
               {/* SCHEDULE STEPS VIEW */}
-              {instTab === "schedule" && (
-                <div className="space-y-4">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-100 text-slate-500 uppercase tracking-wide">
-                        <tr>
-                          <th className="p-2.5">মাস</th>
-                          <th className="p-2.5">তারিখ ও পেমেন্ট</th>
-                          <th className="p-2.5 text-right">বাকি পরিমাণ</th>
-                          <th className="p-2.5 text-center">অবস্থা</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                        {(selectedInstallment.schedule || []).map((s) => {
-                          const due = Math.max(0, s.amount - s.paidAmount);
-                          const isPaid = s.status === "paid" || due <= 0;
-                          return (
-                            <tr key={s.month} className={isPaid ? "bg-emerald-50/40" : ""}>
-                              <td className="p-2.5 font-bold text-slate-800">কিস্তি {s.month}</td>
-                              <td className="p-2.5">
-                                <span className="font-mono text-slate-500">{s.dueDate}</span>
-                                <div className="text-[9px] text-emerald-600 font-bold mt-0.5">জমাঃ ৳{formatNum(s.paidAmount)}</div>
-                              </td>
-                              <td className="p-2.5 text-right">
-                                <span className="font-bold text-slate-800">৳{formatNum(s.amount)}</span>
-                                {due > 0 && <div className="text-[9px] text-rose-500 font-bold mt-0.5">বাকিঃ ৳{formatNum(due)}</div>}
-                              </td>
-                              <td className="p-2.5 text-center">
-                                <span className={`px-2 py-0.5 rounded font-extrabold text-[8px] uppercase ${isPaid ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
-                                  {isPaid ? "পরিশোধিত" : "বকেয়া"}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+              {instTab === "schedule" && (() => {
+                const totalAmt = (selectedInstallment.schedule || []).reduce((sum, s) => sum + Number(s.amount || 0), 0);
+                const totalPaid = (selectedInstallment.schedule || []).reduce((sum, s) => sum + Number(s.paidAmount || 0), 0);
+                const totalRemaining = (selectedInstallment.schedule || []).reduce((sum, s) => sum + Math.max(0, Number(s.amount || 0) - Number(s.paidAmount || 0)), 0);
 
-                  {/* Payment controls */}
-                  {selectedInstallment.dueAmount > 0 && isCompanyOrAdmin && (
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-150 space-y-3 text-left">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">💵 কাস্টম পরিমাণ পরিশোধ করুন</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="number"
-                          value={customPayAmount || ""}
-                          onChange={(e) => {
-                            setCustomPayAmount(parseFloat(e.target.value) || 0);
-                            setPaymentPreview(null);
-                          }}
-                          placeholder="টাকার পরিমাণ"
-                          className="flex-1 border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold outline-none bg-white focus:border-emerald-500"
-                        />
-                        <button
-                          onClick={handleCalculateCustomPayment}
-                          className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2 rounded-xl text-xs transition active:scale-95 cursor-pointer"
-                        >
-                          হিসাব করুন
-                        </button>
+                return (
+                  <div className="space-y-4">
+                    {/* Summary Cards */}
+                    <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-100">
+                      <div className="text-center p-2 bg-white rounded-xl shadow-xs border border-slate-100">
+                        <span className="text-[9px] text-slate-500 font-bold block uppercase">মোট কিস্তি</span>
+                        <span className="text-xs font-black text-slate-800">৳{formatNum(totalAmt)}</span>
                       </div>
-
-                      {/* Calculated sequential allocation preview */}
-                      {paymentPreview && (
-                        <div className="mt-3 p-3 bg-indigo-50 border border-indigo-150 rounded-xl space-y-2 text-[11px] text-slate-700 animate-fadeIn">
-                          <p className="font-extrabold text-indigo-800 border-b pb-1.5 flex items-center justify-between">
-                            <span>📊 পেমেন্ট বণ্টন হিসাব রিভিউ</span>
-                            <span className="text-xs bg-indigo-100 px-2 py-0.5 rounded-full text-indigo-700 font-extrabold">৳{formatNum(paymentPreview.amount)}</span>
-                          </p>
-                          <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                            {paymentPreview.scheduleCopy.map((s, idx) => {
-                              const originalStep = (selectedInstallment.schedule || [])[idx];
-                              const addedAmount = s.paidAmount - (originalStep?.paidAmount || 0);
-                              if (addedAmount <= 0) return null;
-                              return (
-                                <div key={s.month} className="flex justify-between items-center py-0.5 border-b border-indigo-100/50">
-                                  <span>কিস্তি {s.month} ({s.status === "paid" ? "✅ পরিশোধিত" : "🟡 আংশিক"}):</span>
-                                  <span className="font-bold text-slate-800">৳{formatNum(originalStep?.paidAmount || 0)} ➔ ৳{formatNum(s.paidAmount)} (+৳{formatNum(addedAmount)})</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <div className="flex justify-between items-center font-bold text-slate-800 pt-1 border-t border-indigo-150">
-                            <span>নতুন বকেয়া পরিমাণঃ</span>
-                            <span className="text-rose-600 font-extrabold">৳{formatNum(paymentPreview.computedDue)}</span>
-                          </div>
-                          <div className="flex gap-2 pt-2">
-                            <button
-                              onClick={handleSaveCustomPayment}
-                              disabled={saving}
-                              className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 rounded-xl text-[10px] transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
-                            >
-                              ✔️ নিশ্চিত ও সেভ করুন
-                            </button>
-                            <button
-                              onClick={() => setPaymentPreview(null)}
-                              className="px-3 bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold py-2 rounded-xl text-[10px] transition cursor-pointer"
-                            >
-                              বাতিল
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                      <div className="text-center p-2 bg-emerald-50/50 rounded-xl shadow-xs border border-emerald-100/50">
+                        <span className="text-[9px] text-emerald-600 font-bold block uppercase">মোট পরিশোধ</span>
+                        <span className="text-xs font-black text-emerald-700">৳{formatNum(totalPaid)}</span>
+                      </div>
+                      <div className="text-center p-2 bg-rose-50/50 rounded-xl shadow-xs border border-rose-100/50">
+                        <span className="text-[9px] text-rose-600 font-bold block uppercase">মোট বাকি</span>
+                        <span className="text-xs font-black text-rose-700">৳{formatNum(totalRemaining)}</span>
+                      </div>
                     </div>
-                  )}
-                </div>
-              )}
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-100 text-slate-500 uppercase tracking-wide">
+                          <tr>
+                            <th className="p-2.5">মাস</th>
+                            <th className="p-2.5">তারিখ ও পেমেন্ট</th>
+                            <th className="p-2.5 text-right">বাকি পরিমাণ</th>
+                            <th className="p-2.5 text-center">অবস্থা</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                          {(selectedInstallment.schedule || []).map((s) => {
+                            const due = Math.max(0, s.amount - s.paidAmount);
+                            const isPaid = s.status === "paid" || due <= 0;
+                            return (
+                              <tr key={s.month} className={isPaid ? "bg-emerald-50/40" : ""}>
+                                <td className="p-2.5 font-bold text-slate-800">কিস্তি {s.month}</td>
+                                <td className="p-2.5">
+                                  <span className="font-mono text-slate-500">{s.dueDate}</span>
+                                  <div className="text-[9px] text-emerald-600 font-bold mt-0.5">জমাঃ ৳{formatNum(s.paidAmount)}</div>
+                                </td>
+                                <td className="p-2.5 text-right">
+                                  <span className="font-bold text-slate-800">৳{formatNum(s.amount)}</span>
+                                  {due > 0 && <div className="text-[9px] text-rose-500 font-bold mt-0.5">বাকিঃ ৳{formatNum(due)}</div>}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  <span className={`px-2 py-0.5 rounded font-extrabold text-[8px] uppercase ${isPaid ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                                    {isPaid ? "পরিশোধিত" : "বকেয়া"}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot className="bg-slate-100 font-bold text-slate-800 border-t-2 border-slate-200">
+                          <tr>
+                            <td className="p-2.5 font-extrabold text-slate-900">মোট (Total)</td>
+                            <td className="p-2.5 text-emerald-600 font-extrabold">জমাঃ ৳{formatNum(totalPaid)}</td>
+                            <td className="p-2.5 text-right text-slate-900 font-extrabold">
+                              ৳{formatNum(totalAmt)}
+                              {totalRemaining > 0 && <div className="text-[9px] text-rose-600 font-extrabold">বাকিঃ ৳{formatNum(totalRemaining)}</div>}
+                            </td>
+                            <td className="p-2.5 text-center">
+                              <span className={`px-2 py-0.5 rounded font-extrabold text-[8px] uppercase ${totalRemaining === 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                                {totalRemaining === 0 ? "পরিশোধিত" : "বকেয়া"}
+                              </span>
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+
+                    {/* Payment controls */}
+                    {selectedInstallment.dueAmount > 0 && isCompanyOrAdmin && (
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-150 space-y-3 text-left">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">💵 কাস্টম পরিমাণ পরিশোধ করুন</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            value={customPayAmount || ""}
+                            onChange={(e) => {
+                              setCustomPayAmount(parseFloat(e.target.value) || 0);
+                              setPaymentPreview(null);
+                            }}
+                            placeholder="টাকার পরিমাণ"
+                            className="flex-1 border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-bold outline-none bg-white focus:border-emerald-500"
+                          />
+                          <button
+                            onClick={handleCalculateCustomPayment}
+                            className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2 rounded-xl text-xs transition active:scale-95 cursor-pointer"
+                          >
+                            হিসাব করুন
+                          </button>
+                        </div>
+
+                        {/* Calculated sequential allocation preview */}
+                        {paymentPreview && (
+                          <div className="mt-3 p-3 bg-indigo-50 border border-indigo-150 rounded-xl space-y-2 text-[11px] text-slate-700 animate-fadeIn">
+                            <p className="font-extrabold text-indigo-800 border-b pb-1.5 flex items-center justify-between">
+                              <span>📊 পেমেন্ট বণ্টন হিসাব রিভিউ</span>
+                              <span className="text-xs bg-indigo-100 px-2 py-0.5 rounded-full text-indigo-700 font-extrabold">৳{formatNum(paymentPreview.amount)}</span>
+                            </p>
+                            <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                              {paymentPreview.scheduleCopy.map((s, idx) => {
+                                const originalStep = (selectedInstallment.schedule || [])[idx];
+                                const addedAmount = s.paidAmount - (originalStep?.paidAmount || 0);
+                                if (addedAmount <= 0) return null;
+                                return (
+                                  <div key={s.month} className="flex justify-between items-center py-0.5 border-b border-indigo-100/50">
+                                    <span>কিস্তি {s.month} ({s.status === "paid" ? "✅ পরিশোধিত" : "🟡 আংশিক"}):</span>
+                                    <span className="font-bold text-slate-800">৳{formatNum(originalStep?.paidAmount || 0)} ➔ ৳{formatNum(s.paidAmount)} (+৳{formatNum(addedAmount)})</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="flex justify-between items-center font-bold text-slate-800 pt-1 border-t border-indigo-150">
+                              <span>নতুন বকেয়া পরিমাণঃ</span>
+                              <span className="text-rose-600 font-extrabold">৳{formatNum(paymentPreview.computedDue)}</span>
+                            </div>
+                            <div className="flex gap-2 pt-2">
+                              <button
+                                onClick={handleSaveCustomPayment}
+                                disabled={saving}
+                                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 rounded-xl text-[10px] transition active:scale-95 flex items-center justify-center gap-1 cursor-pointer"
+                              >
+                                ✔️ নিশ্চিত ও সেভ করুন
+                              </button>
+                              <button
+                                onClick={() => setPaymentPreview(null)}
+                                className="px-3 bg-slate-200 hover:bg-slate-300 text-slate-600 font-bold py-2 rounded-xl text-[10px] transition cursor-pointer"
+                              >
+                                বাতিল
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* PAYMENTS HISTORY LIST */}
               {instTab === "history" && (
@@ -2602,10 +3321,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
               {isCompanyOrAdmin && (
                 <button
                   onClick={() => {
-                    if (confirm(`"${editingInstallment.customerName}" কিস্তি কন্ট্যাক্টটি ডিলিট করতে চান?`)) {
-                      handleDeleteInstallment(editingInstallment);
-                      setEditingInstallment(null);
-                    }
+                    handleDeleteInstallment(editingInstallment);
                   }}
                   className="w-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 py-2.5 rounded-xl font-bold transition flex items-center justify-center gap-1 text-xs cursor-pointer"
                 >
@@ -2667,34 +3383,39 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       {/* ======================================================== */}
       {/* 8. SINGLE PROJECT DETAILS INFO MODAL (VIEW ONLY) */}
       {/* ======================================================== */}
-      {showProjectDetails && (
+      {showProjectDetails && currentProject && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4 animate-fadeIn">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 text-left">
-            <h3 className="font-extrabold text-blue-700 text-base border-b pb-2">📄 প্রজেক্টের তথ্য</h3>
+          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-4 text-left max-h-[90vh] overflow-y-auto">
+            <h3 className="font-extrabold text-blue-700 text-base border-b pb-2 flex items-center justify-between">
+              <span>📄 প্রজেক্টের তথ্য</span>
+              <span className="text-xs bg-blue-50 text-blue-600 px-2.5 py-1 rounded-full font-bold">
+                ID: {currentProject.id.substring(0, 6)}
+              </span>
+            </h3>
 
             <div className="space-y-3.5 text-xs font-semibold text-slate-700">
               <div className="grid grid-cols-2 gap-2 border-b pb-2">
                 <div>
                   <p className="text-[9px] text-slate-400 font-bold uppercase">নাম</p>
-                  <p className="text-slate-800 font-bold mt-0.5">{showProjectDetails.name}</p>
+                  <p className="text-slate-800 font-bold mt-0.5">{currentProject.name}</p>
                 </div>
                 <div>
                   <p className="text-[9px] text-slate-400 font-bold uppercase">টাইপ</p>
-                  <p className="text-slate-800 mt-0.5">{showProjectDetails.type || "N/A"}</p>
+                  <p className="text-slate-800 mt-0.5">{currentProject.type || "N/A"}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2 border-b pb-2">
                 <div>
                   <p className="text-[9px] text-slate-400 font-bold uppercase">সম্ভাব্য বাজেট</p>
-                  <p className="text-emerald-600 font-bold mt-0.5">৳{formatNum(showProjectDetails.budget || 0)}</p>
+                  <p className="text-indigo-600 font-bold mt-0.5">৳{formatNum(currentProject.budget || 0)}</p>
                 </div>
                 <div>
                   <p className="text-[9px] text-slate-400 font-bold uppercase">স্ট্যাটাস</p>
                   <span className="text-indigo-600 font-bold mt-0.5 inline-block">
-                    {showProjectDetails.status === "active"
+                    {currentProject.status === "active"
                       ? "🟢 চলমান"
-                      : showProjectDetails.status === "completed"
+                      : currentProject.status === "completed"
                       ? "✅ সম্পন্ন"
                       : "🔴 বন্ধ"}
                   </span>
@@ -2704,33 +3425,325 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
               <div className="grid grid-cols-2 gap-2 border-b pb-2">
                 <div>
                   <p className="text-[9px] text-slate-400 font-bold uppercase">শুরুর তারিখ</p>
-                  <p className="font-mono text-slate-600 mt-0.5">{showProjectDetails.startDate || "N/A"}</p>
+                  <p className="font-mono text-slate-600 mt-0.5">{currentProject.startDate || "N/A"}</p>
                 </div>
                 <div>
                   <p className="text-[9px] text-slate-400 font-bold uppercase">সম্ভাব্য শেষ তারিখ</p>
-                  <p className="font-mono text-slate-600 mt-0.5">{showProjectDetails.endDate || "N/A"}</p>
+                  <p className="font-mono text-slate-600 mt-0.5">{currentProject.endDate || "N/A"}</p>
                 </div>
               </div>
 
               <div>
                 <p className="text-[9px] text-slate-400 font-bold uppercase">📍 লোকেশন</p>
-                <p className="text-slate-700 mt-0.5">{showProjectDetails.location || "N/A"}</p>
+                <p className="text-slate-700 mt-0.5">{currentProject.location || "N/A"}</p>
               </div>
 
               <div>
                 <p className="text-[9px] text-slate-400 font-bold uppercase">📝 বিস্তারিত বিবরণ</p>
                 <p className="text-[11px] text-slate-600 bg-slate-50 border border-slate-100 p-2.5 rounded-lg mt-1 whitespace-pre-line leading-relaxed">
-                  {showProjectDetails.desc || "কোনো বিবরণী লেখা নেই।"}
+                  {currentProject.desc || "কোনো বিবরণী লেখা নেই।"}
                 </p>
               </div>
+
+              {/* BUDGET & INVESTMENT ANALYSIS SECTION */}
+              <div className="border-b pb-2 space-y-2">
+                <h4 className="font-extrabold text-blue-700 text-xs flex items-center gap-1 uppercase tracking-wider">💰 ইনভেস্টমেন্ট ও বাজেট বিশ্লেষণ</h4>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl space-y-1.5 text-[11px]">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">নির্দিষ্ট প্রজেক্ট ইনভেস্ট (বিশেষ):</span>
+                    <span className="font-bold text-slate-700">
+                      ৳{formatNum(companyMembers.reduce((sum, u) => sum + ((memberSpecialInvMap[u.docId] || {})[currentProject.id] || 0), 0))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">সাধারণ তহবিল অংশগ্রহণ (Distributed):</span>
+                    <span className="font-bold text-slate-700">
+                      ৳{formatNum(companyMembers.reduce((sum, u) => sum + (memberGeneralInv[u.docId] || 0), 0))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-t pt-1.5 font-bold">
+                    <span className="text-slate-600">সর্বমোট ইনভেস্টমেন্টঃ</span>
+                    <span className="text-blue-600">
+                      ৳{formatNum(projectTotalParticipating[currentProject.id] || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span className="text-slate-600">ঘাটতি / অতিরিক্ত বাজেটঃ</span>
+                    <span>
+                      {(projectTotalParticipating[currentProject.id] || 0) - (currentProject.budget || 0) >= 0 ? (
+                        <span className="text-emerald-600 font-extrabold">
+                          +৳{formatNum((projectTotalParticipating[currentProject.id] || 0) - (currentProject.budget || 0))} (অতিরিক্ত)
+                        </span>
+                      ) : (
+                        <span className="text-rose-500 font-extrabold">
+                          -৳{formatNum(Math.abs((projectTotalParticipating[currentProject.id] || 0) - (currentProject.budget || 0)))} (বাকি)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SHAREHOLDERS LIST FOR THIS PROJECT */}
+              <div className="space-y-2 border-b pb-3">
+                <h4 className="font-extrabold text-blue-700 text-xs flex items-center gap-1 uppercase tracking-wider">
+                  👥 অংশীদার শেয়ারহোল্ডার তালিকা ({currentProject.name})
+                </h4>
+                <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-2xl bg-slate-50/50 p-2 space-y-1.5">
+                  {companyMembers
+                    .filter((u) => u.accountType !== "saving")
+                    .map((u) => {
+                      const uSpec = (memberSpecialInvMap[u.docId] || {})[currentProject.id] || 0;
+                      const uGen = memberGeneralInv[u.docId] || 0;
+                      const uTotal = uSpec + uGen;
+                      const uShare = (memberProjectsShare[u.docId] || {})[currentProject.id] || 0;
+
+                      if (uTotal <= 0 && uShare <= 0) return null;
+
+                      return (
+                        <div
+                          key={u.docId}
+                          className="bg-white border border-slate-100 p-2.5 rounded-xl flex justify-between items-center text-[10px] shadow-sm hover:border-blue-100 transition"
+                        >
+                          <div>
+                            <p className="font-bold text-slate-800 text-xs">{u.name}</p>
+                            <p className="text-[9px] text-slate-400 mt-0.5 font-medium">
+                              বিশেষঃ ৳{formatNum(uSpec)} | সাধারণঃ ৳{formatNum(uGen)}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-extrabold text-blue-600">{(uShare * 100).toFixed(1)}% শেয়ার</p>
+                            <p className="text-[9px] text-slate-400 mt-0.5 font-medium">মোটঃ ৳{formatNum(uTotal)}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* DOCUMENTS & PROJECT ARCHIVE SECTION */}
+              <div className="space-y-3 pt-1">
+                <h4 className="font-extrabold text-blue-700 text-xs flex items-center gap-1 uppercase tracking-wider">
+                  📁 প্রজেক্ট ডকুমেন্ট ও আর্কাইভ ({currentProject.documents?.length || 0})
+                </h4>
+
+                {/* Document List */}
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {!currentProject.documents || currentProject.documents.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 italic text-center py-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                      কোনো ডকুমেন্ট আপলোড করা হয়নি।
+                    </p>
+                  ) : (
+                    currentProject.documents.map((d) => (
+                      <div key={d.id} className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl space-y-2 hover:border-blue-100 transition shadow-xs">
+                        <div className="flex justify-between items-start gap-1">
+                          <div className="space-y-0.5">
+                            <p className="font-bold text-slate-800 text-[11px] flex items-center gap-1">
+                              <FileText className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                              {d.name}
+                            </p>
+                            <p className="text-[9px] text-slate-400 font-medium">
+                              আপলোডঃ {d.uploadedAt} {d.fileType ? `| ফাইলঃ ${d.fileType.split("/")[1]?.toUpperCase() || "Unknown"}` : ""}
+                            </p>
+                          </div>
+                          
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => setReadingDoc(d)}
+                              className="px-2 py-1 text-[9px] bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-100 rounded-lg font-bold transition flex items-center gap-0.5 cursor-pointer"
+                            >
+                              <Eye className="w-3 h-3" /> পড়ুন / ভিউ
+                            </button>
+
+                            {(currentUser.role === "admin" || currentUser.role === "company") && (
+                              <button
+                                onClick={() => handleDeleteDocument(d.id)}
+                                className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-100 transition cursor-pointer"
+                                title="ডিলিট করুন"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {d.notes && (
+                          <p className="text-[10px] text-slate-500 line-clamp-2 italic bg-white p-1.5 rounded-lg border border-slate-100">
+                            {d.notes}
+                          </p>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Admin & Company Upload Panel */}
+                {(currentUser.role === "admin" || currentUser.role === "company") && (
+                  <div className="bg-slate-50/50 border border-slate-100 p-3 rounded-2xl space-y-2.5 mt-2">
+                    <p className="font-bold text-slate-700 text-[10px] uppercase tracking-wider border-b pb-1 flex items-center gap-1">
+                      <Plus className="w-3.5 h-3.5 text-blue-600" /> নতুন ডকুমেন্ট যুক্ত করুন
+                    </p>
+                    
+                    <div className="space-y-2">
+                      <div>
+                        <label className="text-[9px] text-slate-500 font-bold block mb-0.5">ডকুমেন্ট নাম / শিরোনাম <span className="text-rose-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="যেমন: প্রজেক্ট চুক্তিপত্র, প্ল্যান লেআউট"
+                          value={newDocName}
+                          onChange={(e) => setNewDocName(e.target.value)}
+                          className="w-full bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold focus:border-blue-500 focus:outline-hidden"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] text-slate-500 font-bold block mb-0.5">বিস্তারিত বিবরণ বা নোট</label>
+                        <textarea
+                          placeholder="প্রজেক্টের তথ্য বা সংক্ষিপ্ত নোট এখানে লিখুন..."
+                          rows={2}
+                          value={newDocNotes}
+                          onChange={(e) => setNewDocNotes(e.target.value)}
+                          className="w-full bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold focus:border-blue-500 focus:outline-hidden resize-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] text-slate-500 font-bold block mb-0.5">ফাইল আপলোড (ঐচ্ছিক, PDF, Image, TXT ইত্যাদি)</label>
+                        <input
+                          id="doc-file-input"
+                          type="file"
+                          onChange={handleFileChange}
+                          className="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                        />
+                        {newDocFile && (
+                          <p className="text-[9px] text-emerald-600 font-medium mt-1">
+                            ✓ ফাইল সিলেক্টেড: {newDocFile.name}
+                          </p>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={handleAddDocument}
+                        disabled={docUploadLoading || !newDocName.trim()}
+                        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white py-2 rounded-xl text-[10px] font-bold transition flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                      >
+                        {docUploadLoading ? "আপলোড হচ্ছে..." : "ডকুমেন্ট যুক্ত করুন"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
             </div>
 
             <button
               onClick={() => setShowProjectDetails(null)}
-              className="w-full bg-slate-100 hover:bg-slate-200 py-3 rounded-xl font-bold text-xs"
+              className="w-full bg-slate-100 hover:bg-slate-200 py-3 rounded-xl font-bold text-xs cursor-pointer"
             >
               বন্ধ করুন
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 9. PROJECT DOCUMENT READER MODAL */}
+      {/* ======================================================== */}
+      {readingDoc && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[1100] p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 text-left max-h-[85vh] overflow-y-auto">
+            <h3 className="font-extrabold text-indigo-700 text-base border-b pb-2 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <FileText className="w-5 h-5 text-indigo-600" />
+                {readingDoc.name}
+              </span>
+              <span className="text-[9px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full font-bold">
+                ডকুমেন্ট ভিউয়ার
+              </span>
+            </h3>
+
+            <div className="space-y-4 text-xs font-semibold text-slate-700">
+              {readingDoc.notes && (
+                <div className="space-y-1">
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">📝 বিবরণ / ডকুমেন্ট টেক্সট</p>
+                  <p className="text-[12px] text-slate-800 bg-slate-50 border border-slate-100 p-3.5 rounded-xl font-medium whitespace-pre-line leading-relaxed">
+                    {readingDoc.notes}
+                  </p>
+                </div>
+              )}
+
+              {readingDoc.fileData ? (
+                <div className="space-y-2 bg-emerald-50/50 border border-emerald-100 p-3 rounded-2xl">
+                  <p className="text-[9px] text-emerald-600 font-extrabold uppercase tracking-wider flex items-center gap-1">
+                    📎 সংযুক্ত ফাইল
+                  </p>
+                  <div className="flex justify-between items-center text-[11px] gap-2">
+                    <span className="text-slate-600 truncate flex-1" title={readingDoc.name}>
+                      {readingDoc.name}
+                    </span>
+                    <a
+                      href={readingDoc.fileData}
+                      download={readingDoc.name}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-bold transition flex items-center gap-1 cursor-pointer flex-shrink-0"
+                    >
+                      ডাউনলোড / ভিউ করুন
+                    </a>
+                  </div>
+                  {readingDoc.fileType?.startsWith("image/") && (
+                    <div className="mt-2 border border-slate-200 rounded-xl overflow-hidden bg-white max-h-60 flex items-center justify-center">
+                      <img src={readingDoc.fileData} alt={readingDoc.name} referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain" />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                !readingDoc.notes && (
+                  <p className="text-center py-4 text-slate-400 italic">এই ডকুমেন্টে কোনো তথ্য বা ফাইল সংযুক্ত নেই।</p>
+                )
+              )}
+            </div>
+
+            <button
+              onClick={() => setReadingDoc(null)}
+              className="w-full bg-slate-100 hover:bg-slate-200 py-2.5 rounded-xl font-bold text-xs cursor-pointer"
+            >
+              বন্ধ করুন
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* CUSTOM CONFIRMATION DIALOG MODAL */}
+      {/* ======================================================== */}
+      {confirmState?.isOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[2000] p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl space-y-4 text-left font-sans border border-slate-100">
+            <div className="flex items-center gap-2.5 border-b pb-3 text-rose-600">
+              <span className="p-2 rounded-full bg-rose-50 text-rose-600">
+                <Trash2 className="w-5 h-5" />
+              </span>
+              <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">{confirmState.title}</h3>
+            </div>
+
+            <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed">
+              {confirmState.message}
+            </p>
+
+            <div className="flex gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                onClick={confirmState.onConfirm}
+                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl text-xs font-bold transition cursor-pointer active:scale-95"
+              >
+                হ্যাঁ, নিশ্চিত
+              </button>
+              <button
+                onClick={() => setConfirmState(null)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                বাতিল
+              </button>
+            </div>
           </div>
         </div>
       )}

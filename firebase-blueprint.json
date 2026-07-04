@@ -98,9 +98,30 @@
         "createdAt": { "type": "string" }
       },
       "required": ["customerName", "productName", "totalAmount", "months", "startDate", "dueAmount"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System or company announcements sent by admins to companies/members or by companies to their members.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderRole": { "type": "string", "enum": ["admin", "company"] },
+        "targetType": { "type": "string", "enum": ["all_companies", "all_members", "company_members"] },
+        "targetCompanyId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "readBy": { "type": "array" }
+      },
+      "required": ["title", "body", "senderId", "senderName", "senderRole", "targetType", "createdAt"]
     }
   },
   "firestore": {
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Collection of announcements and notifications sent to user groups."
+    },
     "/users/{userId}": {
       "schema": "User",
       "description": "Stores user demographic profiles, current balance summaries, roles, and statuses."

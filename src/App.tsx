@@ -10,9 +10,10 @@ import MemberAddView from "./components/MemberAddView";
 import ProfileView from "./components/ProfileView";
 import GlobalHeader from "./components/GlobalHeader";
 import ArrearsView from "./components/ArrearsView";
+import NotificationsView from "./components/NotificationsView";
 import { motion, AnimatePresence } from "motion/react";
 
-type RouteView = "login" | "dashboard" | "member-list" | "member-add" | "profile" | "arrears";
+type RouteView = "login" | "dashboard" | "member-list" | "member-add" | "profile" | "arrears" | "notifications";
 
 export default function App() {
   const [authStateLoading, setAuthStateLoading] = useState(true);
@@ -129,6 +130,13 @@ export default function App() {
 
           {currentView === "arrears" && (
             <ArrearsView
+              currentUser={currentUser}
+              onNavigate={handleNavigate}
+            />
+          )}
+
+          {currentView === "notifications" && (
+            <NotificationsView
               currentUser={currentUser}
               onNavigate={handleNavigate}
             />

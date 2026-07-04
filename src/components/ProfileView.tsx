@@ -49,6 +49,7 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
   const [dob, setDob] = useState("");
   const [address, setAddress] = useState("");
   const [nidType, setNidType] = useState("NID");
@@ -102,6 +103,7 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
           setName(d.name || "");
           setEmail(d.email || "");
           setMobile(d.mobile || "");
+          setWhatsapp(d.whatsapp || "");
           setDob(d.dob || d.birthDate || "");
           setAddress(d.address || "");
           setNidType(d.nidType || "NID");
@@ -182,7 +184,7 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
 
     if (d.InvestType === "monthly") {
       let cur = new Date(startDate.getFullYear(), startDate.getMonth(), dayOfMonth);
-      while (cur < today) {
+      while (cur <= today) {
         const key = `arrears-${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`;
         if (!existingKeys.has(key)) {
           // Check if a real payment was made this month
@@ -206,7 +208,7 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
       }
     } else if (d.InvestType === "yearly") {
       let curYear = startDate.getFullYear();
-      while (curYear < today.getFullYear()) {
+      while (curYear <= today.getFullYear()) {
         const key = `arrears-${curYear}`;
         if (!existingKeys.has(key)) {
           const hasPayment = existingDocs.some((h) => {
@@ -395,6 +397,7 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
         nidNumber: nidNumber.trim(),
         email: email.trim(),
         mobile: mobile.trim(),
+        whatsapp: whatsapp.trim(),
         dob,
         address: address.trim(),
         accountType,
@@ -466,6 +469,7 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
         nidNumber: nidNumber.trim(),
         email: email.trim(),
         mobile: mobile.trim(),
+        whatsapp: whatsapp.trim(),
         dob,
         address: address.trim(),
         profilePic,
@@ -1084,6 +1088,20 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
                 />
               </div>
               <div>
+                <label className="text-[9px] font-semibold text-slate-500 mb-1 ml-1 block">হোয়াটসঅ্যাপ নম্বর</label>
+                <input
+                  type="tel"
+                  disabled={!editable}
+                  value={whatsapp}
+                  onChange={(e) => setWhatsapp(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl text-xs font-semibold focus:bg-white focus:border-indigo-500 disabled:opacity-75"
+                  placeholder="যেমন: +8801700000000"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
                 <label className="text-[9px] font-semibold text-slate-500 mb-1 ml-1 block">জন্ম তারিখ</label>
                 <input
                   type="date"
@@ -1093,17 +1111,16 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
                   className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl text-xs font-semibold focus:bg-white focus:border-indigo-500 disabled:opacity-75"
                 />
               </div>
-            </div>
-
-            <div>
-              <label className="text-[9px] font-semibold text-slate-500 mb-1 ml-1 block">ইমেইল</label>
-              <input
-                type="email"
-                disabled={!editable}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-semibold focus:bg-white focus:border-indigo-500 disabled:opacity-75"
-              />
+              <div>
+                <label className="text-[9px] font-semibold text-slate-500 mb-1 ml-1 block">ইমেইল</label>
+                <input
+                  type="email"
+                  disabled={!editable}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl text-xs font-semibold focus:bg-white focus:border-indigo-500 disabled:opacity-75"
+                />
+              </div>
             </div>
 
             <div>
