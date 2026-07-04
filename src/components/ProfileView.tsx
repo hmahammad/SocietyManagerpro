@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { doc, getDoc, updateDoc, collection, getDocs, onSnapshot, addDoc } from "firebase/firestore";
-import { updatePassword } from "firebase/auth";
+import { updatePassword, updateProfile, updateEmail } from "firebase/auth";
 import { db, auth } from "../firebase";
 import { User, HistoryEntry } from "../types";
 import {
@@ -58,6 +58,8 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
   const [investAmount, setInvestAmount] = useState<number>(0);
   const [investDate, setInvestDate] = useState("");
   const [canSeeAllData, setCanSeeAllData] = useState<boolean>(false);
+  const [role, setRole] = useState<"member" | "company" | "admin" | "">("");
+  const [status, setStatus] = useState<"active" | "pending" | "request" | "deactive" | "">("");
 
   // Company-only form states
   const [companyName, setCompanyName] = useState("");
@@ -114,6 +116,8 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
           setIdBackUrl(d.idBackUrl || "");
           setCompanyName(d.companyName || "");
           setCompanyAddress(d.companyAddress || "");
+          setRole(d.role || "member");
+          setStatus(d.status || "pending");
 
           if (d.role !== "company") {
             // Fetch history & calculate arrears
@@ -403,9 +407,41 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
         canSeeAllData,
       };
 
-      if (targetUser.role === "company") {
+      if (role === "company" || targetUser.role === "company") {
         updateObj.companyName = companyName.trim();
         updateObj.companyAddress = companyAddress.trim();
+      }
+
+      if (currentUser.role === "admin") {
+        updateObj.role = role;
+        updateObj.status = status;
+      }
+
+      // Sync with Firebase Auth for own profile updates
+      if (isOwnProfile) {
+        const user = auth.currentUser;
+        if (user) {
+          if (email.trim() && email.trim() !== user.email) {
+            try {
+              await updateEmail(user, email.trim());
+            } catch (err: any) {
+              console.warn("Auth email update failed:", err);
+              if (err.code === "auth/requires-recent-login") {
+                showToast("❌ নিরাপত্তার স্বার্থে পুনরায় লগইন করে ইমেইল পরিবর্তন করতে হবে।", "error");
+                setSaving(false);
+                return;
+              }
+            }
+          }
+          try {
+            await updateProfile(user, {
+              displayName: name.trim(),
+              photoURL: profilePic || undefined,
+            });
+          } catch (err) {
+            console.warn("Auth profile update failed:", err);
+          }
+        }
       }
 
       await updateDoc(doc(db, "users", activeId), updateObj);
@@ -487,12 +523,9 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
     );
   }
 
-  const role = targetUser?.role || "member";
-  const status = targetUser?.status || "pending";
-
   // Determine who can edit this profile
-  const targetRole = targetUser?.role || "member";
-  const targetStatus = targetUser?.status || "pending";
+  const targetRole = role || "member";
+  const targetStatus = status || "pending";
 
   let editable = false;
   if (currentUser.role === "admin") {
@@ -661,6 +694,43 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
                   {idBackUrl ? "✓" : "○"}
                 </span>
                 <span className={idBackUrl ? "text-slate-700 font-medium" : "text-slate-400"}>পরিচয়পত্র/ট্রেড লাইসেন্স ডকুমেন্ট (পিছনে)</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Admin Control Panel (Only visible to Admin) */}
+        {currentUser.role === "admin" && (
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-5 rounded-3xl shadow-lg border border-indigo-500/20 space-y-4 mb-4">
+            <span className="text-[11px] font-bold text-indigo-400 block uppercase tracking-wide">
+              🛡️ অ্যাডমিন নিয়ন্ত্রণ প্যানেল (Admin Controls)
+            </span>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-slate-300 mb-1 ml-1 block">👥 ব্যবহারকারী রোল</label>
+                <select
+                  value={role}
+                  onChange={(e: any) => setRole(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white px-3 py-2.5 rounded-xl font-semibold text-xs outline-none focus:border-indigo-400"
+                >
+                  <option value="member">মেম্বার (Member)</option>
+                  <option value="company">কোম্পানি (Company)</option>
+                  <option value="admin">অ্যাডমিন (Admin)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-300 mb-1 ml-1 block">⚙️ অ্যাকাউন্ট স্ট্যাটাস</label>
+                <select
+                  value={status}
+                  onChange={(e: any) => setStatus(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white px-3 py-2.5 rounded-xl font-semibold text-xs outline-none focus:border-indigo-400"
+                >
+                  <option value="active">সক্রিয় (Active)</option>
+                  <option value="pending">পেন্ডিং (Pending)</option>
+                  <option value="request">রিকোয়েস্ট (Request)</option>
+                  <option value="deactive">নিষ্ক্রিয় (Deactive)</option>
+                </select>
               </div>
             </div>
           </div>

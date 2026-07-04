@@ -105,6 +105,8 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
   const [newInvestAmount, setNewInvestAmount] = useState<number>(0);
   const [newInvestDate, setNewInvestDate] = useState(new Date().toISOString().split("T")[0]);
   const [newInvestMemo, setNewInvestMemo] = useState("");
+  const [selectedUserSavingsArrears, setSelectedUserSavingsArrears] = useState<number>(0);
+  const [selectedUserInstallmentArrears, setSelectedUserInstallmentArrears] = useState<number>(0);
 
   // 2. New Transaction form
   const [newTrxProject, setNewProjectTarget] = useState("");
@@ -493,11 +495,42 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
   // Dynamic selector values loading
   const handleNewInvestTargetChange = async (userId: string) => {
     setNewInvestTarget(userId);
+    setSelectedUserSavingsArrears(0);
+    setSelectedUserInstallmentArrears(0);
     if (!userId) return;
     const user = users.find((u) => u.docId === userId);
     if (user) {
       setNewInvestAcctType(user.accountType || "");
       setNewInvestMode(user.InvestType || "");
+
+      // Calculate/Fetch Savings Arrears
+      try {
+        const histSnap = await getDocs(collection(db, "users", userId, "history"));
+        let savingsArr = 0;
+        histSnap.forEach((doc) => {
+          const h = doc.data();
+          if (h.type === "savings_arrears") {
+            savingsArr += Number(h.arrears || 0);
+          }
+        });
+        setSelectedUserSavingsArrears(savingsArr);
+      } catch (e) {
+        console.error("Error fetching user history for arrears:", e);
+      }
+
+      // Calculate Installment Arrears
+      const userInsts = installments.filter((inst) => inst.customerName === user.name && inst.status !== "closed");
+      let instArr = 0;
+      userInsts.forEach((inst) => {
+        const paidTotal = (inst.schedule || [])
+          .filter((s) => s.status === "paid")
+          .reduce((sum, s) => sum + Number(s.amount || 0), 0);
+        const remainingDue = Number(inst.totalAmount || 0) - Number(inst.downPayment || 0) - paidTotal;
+        if (remainingDue > 0) {
+          instArr += remainingDue;
+        }
+      });
+      setSelectedUserInstallmentArrears(instArr);
     }
   };
 
@@ -511,28 +544,149 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
           return;
         }
 
-        // 1. Update user total amount
+        const user = users.find((u) => u.docId === newInvestTarget);
+        if (!user) {
+          alert("ব্যবহারকারী খুঁজে পাওয়া যায়নি");
+          return;
+        }
+
+        let remaining = newInvestAmount;
+        let totalSavingsArrearsPaid = 0;
+        let totalInstallmentArrearsPaid = 0;
+
+        // 1. Fetch savings arrears
+        const histSnap = await getDocs(collection(db, "users", newInvestTarget, "history"));
+        const savingsArrearsDocs: any[] = [];
+        histSnap.forEach((doc) => {
+          const h = { docId: doc.id, ...doc.data() } as any;
+          if (h.type === "savings_arrears") {
+            savingsArrearsDocs.push(h);
+          }
+        });
+
+        // Sort savings arrears by date (oldest first)
+        savingsArrearsDocs.sort((a, b) => {
+          const dateA = a.date || "";
+          const dateB = b.date || "";
+          return dateA.localeCompare(dateB);
+        });
+
+        // Pay off savings arrears
+        for (const arrDoc of savingsArrearsDocs) {
+          if (remaining <= 0) break;
+          const dueAmt = Number(arrDoc.arrears || 0);
+          if (dueAmt <= 0) continue;
+
+          const payAmt = Math.min(remaining, dueAmt);
+          remaining = parseFloat((remaining - payAmt).toFixed(2));
+          totalSavingsArrearsPaid += payAmt;
+
+          // Write paid history log
+          await addDoc(collection(db, "users", newInvestTarget, "history"), {
+            amount: payAmt,
+            date: newInvestDate,
+            memo: `বকেয়া সমন্বয়ঃ ${arrDoc.memo || "সেভিংস জমা"}`,
+            InvestType: user.InvestType || "",
+            accountType: user.accountType || "",
+            createdAt: new Date().toISOString(),
+          });
+
+          // Delete or update the original savings_arrears document
+          const arrDocRef = doc(db, "users", newInvestTarget, "history", arrDoc.docId);
+          if (payAmt >= dueAmt) {
+            // Fully paid: delete the arrears document
+            await deleteDoc(arrDocRef);
+          } else {
+            // Partially paid: update arrears field
+            await updateDoc(arrDocRef, {
+              arrears: parseFloat((dueAmt - payAmt).toFixed(2)),
+            });
+          }
+        }
+
+        // 2. Fetch/Pay Installment arrears
+        if (remaining > 0) {
+          // Find open installment contracts for the user
+          const userInsts = installments.filter(
+            (inst) => inst.customerName === user.name && inst.status !== "closed"
+          );
+
+          for (const inst of userInsts) {
+            if (remaining <= 0) break;
+
+            const scheduleCopy = JSON.parse(JSON.stringify(inst.schedule || [])) as InstallmentStep[];
+            let instPaidThisTime = 0;
+
+            for (let i = 0; i < scheduleCopy.length; i++) {
+              if (remaining <= 0) break;
+              const step = scheduleCopy[i];
+              const stepTotal = Number(step.amount || 0);
+              const stepPaid = Number(step.paidAmount || 0);
+              const stepDue = Math.max(0, stepTotal - stepPaid);
+
+              if (stepDue > 0) {
+                const payAmt = Math.min(remaining, stepDue);
+                step.paidAmount = parseFloat((stepPaid + payAmt).toFixed(2));
+                remaining = parseFloat((remaining - payAmt).toFixed(2));
+                instPaidThisTime += payAmt;
+
+                if (step.paidAmount >= stepTotal) {
+                  step.status = "paid";
+                } else {
+                  step.status = "partial";
+                }
+                step.paidDate = newInvestDate;
+              }
+            }
+
+            if (instPaidThisTime > 0) {
+              totalInstallmentArrearsPaid += instPaidThisTime;
+              const allFullyPaid = scheduleCopy.every((s) => s.status === "paid");
+              const computedDue = scheduleCopy.reduce(
+                (sum, s) => sum + Math.max(0, s.amount - s.paidAmount),
+                0
+              );
+
+              const instRef = doc(db, "installments", inst.id);
+              await updateDoc(instRef, {
+                schedule: scheduleCopy,
+                dueAmount: computedDue,
+                status: allFullyPaid ? "closed" : "open",
+              });
+            }
+          }
+        }
+
+        // 3. Write remaining amount to new investment
+        if (remaining > 0) {
+          await addDoc(collection(db, "users", newInvestTarget, "history"), {
+            amount: remaining,
+            date: newInvestDate,
+            memo: newInvestMemo || "N/A",
+            InvestType: newInvestMode,
+            accountType: newInvestAcctType,
+            createdAt: new Date().toISOString(),
+          });
+        }
+
+        // 4. Update the user's total investment balance
+        const totalAddedToSavings = parseFloat((totalSavingsArrearsPaid + remaining).toFixed(2));
         const userRef = doc(db, "users", newInvestTarget);
+
         await updateDoc(userRef, {
-          amount: increment(newInvestAmount),
+          amount: increment(totalAddedToSavings),
           accountType: newInvestAcctType,
           InvestType: newInvestMode,
         });
 
-        // 2. Write history entry
-        await addDoc(collection(db, "users", newInvestTarget, "history"), {
-          amount: newInvestAmount,
-          date: newInvestDate,
-          memo: newInvestMemo || "N/A",
-          InvestType: newInvestMode,
-          accountType: newInvestAcctType,
-          createdAt: new Date().toISOString(),
-        });
+        alert(`ইনভেস্ট সফলভাবে সম্পন্ন হয়েছে।\nসমন্বয়কৃত সেভিংস বকেয়াঃ ৳${totalSavingsArrearsPaid}\nসমন্বয়কৃত কিস্তি বকেয়াঃ ৳${totalInstallmentArrearsPaid}\nনতুন সেভিংস যুক্ত হয়েছেঃ ৳${remaining}`);
 
         // Reset
         setNewInvestTarget("");
         setNewInvestAmount(0);
         setNewInvestMemo("");
+        setSelectedUserSavingsArrears(0);
+        setSelectedUserInstallmentArrears(0);
         setShowAddModal(false);
       } else if (addMode === "transaction") {
         if (!newTrxProject || !newTrxAmount || newTrxAmount <= 0 || !newTrxDate) {
@@ -1280,6 +1434,27 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                           </option>
                         ))}
                     </select>
+
+                    {newInvestTarget && (
+                      <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl space-y-1 text-xs mt-2.5">
+                        <p className="font-bold text-rose-800">⚠️ বকেয়া তথ্য (Arrears Summary):</p>
+                        <div className="grid grid-cols-2 gap-2 mt-1">
+                          <div>
+                            <span className="text-[10px] text-rose-600 block">সেভিংস বকেয়া:</span>
+                            <span className="font-extrabold text-rose-700">৳{formatNum(selectedUserSavingsArrears)}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-rose-600 block">কিস্তি বকেয়া:</span>
+                            <span className="font-extrabold text-rose-700">৳{formatNum(selectedUserInstallmentArrears)}</span>
+                          </div>
+                        </div>
+                        {(selectedUserSavingsArrears > 0 || selectedUserInstallmentArrears > 0) && (
+                          <p className="text-[9px] text-rose-500 font-bold mt-1.5 leading-normal">
+                            * নতুন ইনভেস্ট এন্ট্রি করলে বকেয়া টাকা স্বয়ংক্রিয়ভাবে সমন্বয় (adjust) করে বাকি টাকা সঞ্চয়ে যুক্ত করা হবে।
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
