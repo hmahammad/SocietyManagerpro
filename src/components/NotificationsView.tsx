@@ -74,6 +74,10 @@ export default function NotificationsView({ currentUser, onNavigate }: Notificat
 
   const handleSendNotification = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (currentUser.role === "company" && currentUser.status !== "active") {
+      setError("আপনার অ্যাকাউন্টটি সক্রিয় নয়। বিজ্ঞপ্তি পাঠাতে পারবেন না।");
+      return;
+    }
     if (!title.trim() || !body.trim()) {
       setError("শিরোনাম এবং বিস্তারিত বিবরণ আবশ্যক!");
       return;
@@ -173,7 +177,7 @@ export default function NotificationsView({ currentUser, onNavigate }: Notificat
             </p>
           </div>
 
-          {(currentUser.role === "admin" || currentUser.role === "company") && (
+          {(currentUser.role === "admin" || (currentUser.role === "company" && currentUser.status === "active")) && (
             <button
               onClick={() => {
                 setShowAddForm(!showAddForm);
@@ -215,7 +219,7 @@ export default function NotificationsView({ currentUser, onNavigate }: Notificat
             )}
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">বিজ্ঞপ্তির শিরোনাম (Title)</label>
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">বিজ্ঞপ্তির শিরোনাম</label>
               <input
                 type="text"
                 placeholder="যেমন: মাসিক ফি পরিশোধের নোটিশ..."
@@ -226,7 +230,7 @@ export default function NotificationsView({ currentUser, onNavigate }: Notificat
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">বিস্তারিত বিবরণ (Message Body)</label>
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">বিস্তারিত বিবরণ</label>
               <textarea
                 placeholder="বিজ্ঞপ্তির বিস্তারিত বিবরণ এখানে লিখুন..."
                 rows={4}
@@ -239,7 +243,7 @@ export default function NotificationsView({ currentUser, onNavigate }: Notificat
             {/* Target Select option for Admin only */}
             {currentUser.role === "admin" && (
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">কাদের কাছে পাঠাতে চান? (Audience)</label>
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">কাদের কাছে পাঠাতে চান?</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -250,7 +254,7 @@ export default function NotificationsView({ currentUser, onNavigate }: Notificat
                         : "bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-600"
                     }`}
                   >
-                    🏢 সকল কোম্পানি (Companies)
+                    🏢 সকল কোম্পানি
                   </button>
                   <button
                     type="button"
@@ -261,7 +265,7 @@ export default function NotificationsView({ currentUser, onNavigate }: Notificat
                         : "bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-600"
                     }`}
                   >
-                    👥 সকল মেম্বার (Members)
+                    👥 সকল মেম্বার
                   </button>
                 </div>
               </div>

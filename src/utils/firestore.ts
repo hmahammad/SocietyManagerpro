@@ -107,3 +107,29 @@ export function formatDate(s?: string | number): string {
     return String(s);
   }
 }
+
+export function normalizePhoneNumber(input: string): string {
+  if (!input) return "";
+  const b2e: Record<string, string> = {
+    "০": "0", "১": "1", "২": "2", "৩": "3", "৪": "4",
+    "৫": "5", "৬": "6", "৭": "7", "৮": "8", "৯": "9"
+  };
+  let normalized = input.replace(/[০-৯]/g, (d) => b2e[d] || d);
+  
+  normalized = normalized.replace(/\D/g, "");
+  
+  if (normalized.startsWith("880") && normalized.length > 11) {
+    normalized = normalized.slice(2);
+  }
+  
+  if (normalized.startsWith("80") && normalized.length > 11) {
+    normalized = normalized.slice(1);
+  }
+
+  if (normalized.length > 11) {
+    normalized = normalized.slice(-11);
+  }
+
+  return normalized;
+}
+

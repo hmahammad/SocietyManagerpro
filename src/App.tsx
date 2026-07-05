@@ -11,14 +11,24 @@ import ProfileView from "./components/ProfileView";
 import GlobalHeader from "./components/GlobalHeader";
 import ArrearsView from "./components/ArrearsView";
 import NotificationsView from "./components/NotificationsView";
+import TransactionsView from "./components/TransactionsView";
 import { motion, AnimatePresence } from "motion/react";
 
-type RouteView = "login" | "dashboard" | "member-list" | "member-add" | "profile" | "arrears" | "notifications";
+type RouteView = "login" | "dashboard" | "member-list" | "member-add" | "profile" | "arrears" | "notifications" | "transactions";
 
 export default function App() {
   const [authStateLoading, setAuthStateLoading] = useState(true);
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  // Language selection state (defaults to "bn")
+  const [language, setLanguage] = useState<"bn" | "en">(() => {
+    return (localStorage.getItem("app_language") as "bn" | "en") || "bn";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("app_language", language);
+  }, [language]);
 
   // Router-like state variables
   const [currentView, setCurrentView] = useState<RouteView>("login");
@@ -79,6 +89,15 @@ export default function App() {
   }, [firebaseUser]);
 
   const handleNavigate = (view: string, params: any = null) => {
+    if (currentUser) {
+      const isActive = currentUser.status === "active";
+      const isAdmin = currentUser.role === "admin";
+      if (!isActive && !isAdmin && view !== "profile") {
+        setNavigationParams(null);
+        setCurrentView("profile");
+        return;
+      }
+    }
     setNavigationParams(params);
     setCurrentView(view as RouteView);
   };
@@ -93,13 +112,19 @@ export default function App() {
   }
 
   if (!firebaseUser || !currentUser) {
-    return <AuthView onSuccess={() => {}} />;
+    return <AuthView onSuccess={() => {}} language={language} setLanguage={setLanguage} />;
   }
 
   // Render correct view based on state
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 select-none">
-      <GlobalHeader currentUser={currentUser} currentView={currentView} onNavigate={handleNavigate} />
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 select-none pb-20 md:pb-0">
+      <GlobalHeader
+        currentUser={currentUser}
+        currentView={currentView}
+        onNavigate={handleNavigate}
+        language={language}
+        setLanguage={setLanguage}
+      />
       <AnimatePresence mode="wait">
         <motion.div
           key={currentView + (navigationParams?.id || "")}
@@ -109,15 +134,15 @@ export default function App() {
           transition={{ duration: 0.2, ease: "easeInOut" }}
         >
           {currentView === "dashboard" && (
-            <DashboardView currentUser={currentUser} onNavigate={handleNavigate} />
+            <DashboardView currentUser={currentUser} onNavigate={handleNavigate} language={language} />
           )}
 
           {currentView === "member-list" && (
-            <MemberListView currentUser={currentUser} onNavigate={handleNavigate} />
+            <MemberListView currentUser={currentUser} onNavigate={handleNavigate} language={language} />
           )}
 
           {currentView === "member-add" && (
-            <MemberAddView currentUser={currentUser} onNavigate={handleNavigate} />
+            <MemberAddView currentUser={currentUser} onNavigate={handleNavigate} language={language} />
           )}
 
           {currentView === "profile" && (
@@ -125,6 +150,7 @@ export default function App() {
               currentUser={currentUser}
               targetId={navigationParams?.id}
               onNavigate={handleNavigate}
+              language={language}
             />
           )}
 
@@ -132,6 +158,7 @@ export default function App() {
             <ArrearsView
               currentUser={currentUser}
               onNavigate={handleNavigate}
+              language={language}
             />
           )}
 
@@ -139,6 +166,15 @@ export default function App() {
             <NotificationsView
               currentUser={currentUser}
               onNavigate={handleNavigate}
+              language={language}
+            />
+          )}
+
+          {currentView === "transactions" && (
+            <TransactionsView
+              currentUser={currentUser}
+              onNavigate={handleNavigate}
+              language={language}
             />
           )}
         </motion.div>

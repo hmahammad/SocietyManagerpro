@@ -2,19 +2,24 @@ import { useState, useEffect } from "react";
 import { auth, db } from "../firebase";
 import { User } from "../types";
 import { doc, getDoc, collection, query, where, getDocs, limit, onSnapshot } from "firebase/firestore";
-import { LayoutDashboard, Users, UserPlus, User as UserIcon, LogOut, Building2, AlertCircle, Bell } from "lucide-react";
+import { LayoutDashboard, Users, UserPlus, User as UserIcon, LogOut, Building2, AlertCircle, Bell, ArrowLeftRight } from "lucide-react";
+import { translations, Language } from "../utils/translations";
 
 interface GlobalHeaderProps {
   currentUser: User;
   currentView: string;
   onNavigate: (view: string, params?: any) => void;
+  language?: Language;
+  setLanguage?: (lang: Language) => void;
 }
 
-export default function GlobalHeader({ currentUser, currentView, onNavigate }: GlobalHeaderProps) {
+export default function GlobalHeader({ currentUser, currentView, onNavigate, language = "bn", setLanguage }: GlobalHeaderProps) {
+  const t = translations[language];
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [adminWhatsapp, setAdminWhatsapp] = useState<string>("");
   const [companyWhatsapp, setCompanyWhatsapp] = useState<string>("");
+  const [displayCompanyName, setDisplayCompanyName] = useState<string>("");
   const [unreadCount, setUnreadCount] = useState<number>(0);
 
   useEffect(() => {
@@ -31,7 +36,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
       }
     };
 
-    const fetchCompanyWhatsapp = async () => {
+    const fetchCompanyDetails = async () => {
       try {
         const targetCompanyId = currentUser.role === "company" ? currentUser.docId : currentUser.companyId;
         if (targetCompanyId) {
@@ -39,15 +44,25 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
           if (companySnap.exists()) {
             const companyData = companySnap.data() as User;
             setCompanyWhatsapp(companyData.whatsapp || companyData.mobile || "");
+            if (companyData.companyName) {
+              setDisplayCompanyName(companyData.companyName);
+            } else {
+              setDisplayCompanyName("সোসাইটি ম্যানেজার");
+            }
+          } else {
+            setDisplayCompanyName(currentUser.companyName || "সোসাইটি ম্যানেজার");
           }
+        } else {
+          setDisplayCompanyName(currentUser.companyName || "সোসাইটি ম্যানেজার");
         }
       } catch (err) {
-        console.error("Error fetching company whatsapp:", err);
+        console.error("Error fetching company details:", err);
+        setDisplayCompanyName(currentUser.companyName || "সোসাইটি ম্যানেজার");
       }
     };
 
     fetchAdminWhatsapp();
-    fetchCompanyWhatsapp();
+    fetchCompanyDetails();
   }, [currentUser]);
 
   // Sync and count unread notifications
@@ -112,10 +127,10 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
             </div>
             <div>
               <span className="font-extrabold text-sm sm:text-base text-slate-800 tracking-tight block">
-                {currentUser.companyName || "সোসাইটি ম্যানেজার"}
+                {displayCompanyName || currentUser.companyName || (language === "bn" ? "সোসাইটি ম্যানেজার" : "Society Manager")}
               </span>
               <span className="text-[9px] text-slate-400 font-bold block -mt-0.5">
-                {currentUser.name} ({currentUser.role === "admin" ? "অ্যাডমিন" : currentUser.role === "company" ? "কোম্পানি" : "সদস্য"})
+                {currentUser.name} ({currentUser.role === "admin" ? t.admin : currentUser.role === "company" ? t.company : t.member})
               </span>
             </div>
           </div>
@@ -132,7 +147,19 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                 }`}
               >
                 <LayoutDashboard className="w-4 h-4" />
-                ড্যাশবোর্ড
+                {t.dashboard}
+              </button>
+
+              <button
+                onClick={() => onNavigate("transactions")}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  currentView === "transactions"
+                    ? "bg-blue-50 text-blue-600"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                }`}
+              >
+                <ArrowLeftRight className="w-4 h-4" />
+                {t.transactions}
               </button>
 
               {isCompanyOrAdmin && (
@@ -146,7 +173,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                     }`}
                   >
                     <Users className="w-4 h-4" />
-                    সদস্য তালিকা
+                    {t.memberList}
                   </button>
 
                   <button
@@ -158,7 +185,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                     }`}
                   >
                     <AlertCircle className="w-4 h-4" />
-                    বকেয়া
+                    {t.arrears}
                   </button>
 
                   <button
@@ -170,7 +197,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                     }`}
                   >
                     <UserPlus className="w-4 h-4" />
-                    সদস্য যোগ করুন
+                    {t.memberAddFull}
                   </button>
                 </>
               )}
@@ -184,30 +211,41 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                 }`}
               >
                 <UserIcon className="w-4 h-4" />
-                প্রোফাইল
+                {t.profile}
               </button>
             </nav>
           )}
 
           {/* Right: User Menu & Notification Bell */}
           <div className="flex items-center gap-2">
-            {/* Elegant Header Notification Bell */}
+            {/* Language Switcher */}
             <button
-              onClick={() => onNavigate("notifications")}
-              className={`w-9 h-9 rounded-full flex items-center justify-center border transition relative cursor-pointer active:scale-95 shrink-0 ${
-                currentView === "notifications"
-                  ? "bg-indigo-50 border-indigo-200 text-indigo-600"
-                  : "bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-800"
-              }`}
-              title="বিজ্ঞপ্তি"
+              onClick={() => setLanguage && setLanguage(language === "bn" ? "en" : "bn")}
+              className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:border-slate-300 bg-slate-50 hover:bg-slate-100 text-[11px] font-black text-slate-700 active:scale-95 transition cursor-pointer"
+              title={language === "bn" ? "Switch to English" : "বাংলায় পরিবর্তন করুন"}
             >
-              <Bell className="w-4.5 h-4.5" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-rose-600 text-white font-black text-[9px] min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center border-2 border-white shadow-md animate-bounce">
-                  {unreadCount}
-                </span>
-              )}
+              {language === "bn" ? "EN" : "বাংলা"}
             </button>
+
+            {/* Elegant Header Notification Bell */}
+            {isActiveOrAdmin && (
+              <button
+                onClick={() => onNavigate("notifications")}
+                className={`w-9 h-9 rounded-full flex items-center justify-center border transition relative cursor-pointer active:scale-95 shrink-0 ${
+                  currentView === "notifications"
+                    ? "bg-indigo-50 border-indigo-200 text-indigo-600"
+                    : "bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-800"
+                }`}
+                title={t.notifications}
+              >
+                <Bell className="w-4.5 h-4.5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-rose-600 text-white font-black text-[9px] min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center border-2 border-white shadow-md animate-bounce">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             <div className="relative">
               <button
@@ -241,24 +279,17 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                         }}
                         className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 transition flex items-center gap-2 cursor-pointer"
                       >
-                        <UserIcon className="w-3.5 h-3.5 text-slate-400" /> প্রোফাইল (Profile)
+                        <UserIcon className="w-3.5 h-3.5 text-slate-400" /> {t.profile}
                       </button>
 
                       <button
                         onClick={() => {
                           setShowProfileMenu(false);
-                          onNavigate("notifications");
+                          onNavigate("transactions");
                         }}
-                        className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 transition flex items-center justify-between cursor-pointer"
+                        className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 transition flex items-center gap-2 cursor-pointer"
                       >
-                        <span className="flex items-center gap-2">
-                          <Bell className="w-3.5 h-3.5 text-slate-400" /> বিজ্ঞপ্তি (Notifications)
-                        </span>
-                        {unreadCount > 0 && (
-                          <span className="bg-rose-600 text-white font-black text-[8px] px-1.5 py-0.5 rounded-full">
-                            {unreadCount}
-                          </span>
-                        )}
+                        <ArrowLeftRight className="w-3.5 h-3.5 text-slate-400" /> {t.transactions}
                       </button>
 
                       {isCompanyOrAdmin && isActiveOrAdmin && (
@@ -270,7 +301,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                             }}
                             className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 transition flex items-center gap-2 cursor-pointer"
                           >
-                            <Users className="w-3.5 h-3.5 text-slate-400" /> সদস্য তালিকা (Member List)
+                            <Users className="w-3.5 h-3.5 text-slate-400" /> {t.memberList}
                           </button>
 
                           <button
@@ -280,7 +311,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                             }}
                             className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 transition flex items-center gap-2 cursor-pointer"
                           >
-                            <AlertCircle className="w-3.5 h-3.5 text-slate-400" /> বকেয়া তালিকা (Arrears List)
+                            <AlertCircle className="w-3.5 h-3.5 text-slate-400" /> {t.arrearsList}
                           </button>
 
                           <button
@@ -290,7 +321,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                             }}
                             className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 transition flex items-center gap-2 cursor-pointer"
                           >
-                            <UserPlus className="w-3.5 h-3.5 text-slate-400" /> সদস্য যোগ (Add Member)
+                            <UserPlus className="w-3.5 h-3.5 text-slate-400" /> {t.memberAddFull}
                           </button>
                         </>
                       )}
@@ -298,7 +329,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                       <hr className="my-1 border-slate-100" />
 
                       <div className="px-3 py-1.5 space-y-1 text-left">
-                        <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">📞 সাপোর্ট ও যোগাযোগ</p>
+                        <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">{t.supportAndContact}</p>
                         
                         {companyWhatsapp ? (
                           <a
@@ -309,7 +340,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                           >
                             <span className="flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              কোম্পানি সাপোর্ট
+                              {t.companySupport}
                             </span>
                             <span className="text-[9px] text-emerald-600 font-mono tracking-tight group-hover:underline">
                               {companyWhatsapp}
@@ -326,7 +357,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                           >
                             <span className="flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                              ডেভলপার সাপোর্ট
+                              {t.devSupport}
                             </span>
                             <span className="text-[9px] text-blue-600 font-mono tracking-tight group-hover:underline">
                               {adminWhatsapp}
@@ -344,7 +375,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                         }}
                         className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-rose-50 text-rose-600 transition flex items-center gap-2 cursor-pointer"
                       >
-                        <LogOut className="w-3.5 h-3.5" /> লগ আউট (Logout)
+                        <LogOut className="w-3.5 h-3.5" /> {t.logout}
                       </button>
                     </div>
                   </div>
@@ -354,72 +385,86 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
           </div>
         </div>
 
-        {/* Mobile Navigation Links (Below Header, horizontal scrollable) */}
+        {/* Fixed Mobile Bottom Navigation Bar */}
         {isActiveOrAdmin && (
-          <div className="flex md:hidden overflow-x-auto py-2 border-t border-slate-100/50 scrollbar-none gap-1.5 -mx-4 px-4">
-            <button
-              onClick={() => onNavigate("dashboard")}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-bold transition whitespace-nowrap cursor-pointer shrink-0 ${
-                currentView === "dashboard"
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              ড্যাশবোর্ড
-            </button>
+          <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-white/95 backdrop-blur-md border-t border-slate-150 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] pb-safe">
+            <div className="flex items-center justify-around h-16 px-1">
+              <button
+                onClick={() => onNavigate("dashboard")}
+                className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all duration-200 cursor-pointer ${
+                  currentView === "dashboard"
+                    ? "text-blue-600 scale-105 font-black"
+                    : "text-slate-500 hover:text-slate-800 font-bold"
+                }`}
+              >
+                <LayoutDashboard className={`w-5 h-5 transition-transform ${currentView === "dashboard" ? "scale-110 text-blue-600" : "text-slate-400"}`} />
+                <span className="text-[9px] tracking-tight">{t.dashboard}</span>
+              </button>
 
-            {isCompanyOrAdmin && (
-              <>
-                <button
-                  onClick={() => onNavigate("member-list")}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-bold transition whitespace-nowrap cursor-pointer shrink-0 ${
-                    currentView === "member-list"
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  সদস্য তালিকা
-                </button>
+              <button
+                onClick={() => onNavigate("transactions")}
+                className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all duration-200 cursor-pointer ${
+                  currentView === "transactions"
+                    ? "text-blue-600 scale-105 font-black"
+                    : "text-slate-500 hover:text-slate-800 font-bold"
+                }`}
+              >
+                <ArrowLeftRight className={`w-5 h-5 transition-transform ${currentView === "transactions" ? "scale-110 text-blue-600" : "text-slate-400"}`} />
+                <span className="text-[9px] tracking-tight">{t.transactions}</span>
+              </button>
 
-                <button
-                  onClick={() => onNavigate("arrears")}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-bold transition whitespace-nowrap cursor-pointer shrink-0 ${
-                    currentView === "arrears"
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  বকেয়া
-                </button>
+              {isCompanyOrAdmin && (
+                <>
+                  <button
+                    onClick={() => onNavigate("member-list")}
+                    className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all duration-200 cursor-pointer ${
+                      currentView === "member-list"
+                        ? "text-blue-600 scale-105 font-black"
+                        : "text-slate-500 hover:text-slate-800 font-bold"
+                    }`}
+                  >
+                    <Users className={`w-5 h-5 transition-transform ${currentView === "member-list" ? "scale-110 text-blue-600" : "text-slate-400"}`} />
+                    <span className="text-[9px] tracking-tight">{t.memberList}</span>
+                  </button>
 
-                <button
-                  onClick={() => onNavigate("member-add")}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-bold transition whitespace-nowrap cursor-pointer shrink-0 ${
-                    currentView === "member-add"
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  সদস্য যোগ
-                </button>
-              </>
-            )}
+                  <button
+                    onClick={() => onNavigate("arrears")}
+                    className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all duration-200 cursor-pointer ${
+                      currentView === "arrears"
+                        ? "text-blue-600 scale-105 font-black"
+                        : "text-slate-500 hover:text-slate-800 font-bold"
+                    }`}
+                  >
+                    <AlertCircle className={`w-5 h-5 transition-transform ${currentView === "arrears" ? "scale-110 text-blue-600" : "text-slate-400"}`} />
+                    <span className="text-[9px] tracking-tight">{t.arrears}</span>
+                  </button>
 
-            <button
-              onClick={() => onNavigate("profile")}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-bold transition whitespace-nowrap cursor-pointer shrink-0 ${
-                currentView === "profile"
-                  ? "bg-blue-50 text-blue-600"
-                  : "text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <UserIcon className="w-3.5 h-3.5" />
-              প্রোফাইল
-            </button>
+                  <button
+                    onClick={() => onNavigate("member-add")}
+                    className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all duration-200 cursor-pointer ${
+                      currentView === "member-add"
+                        ? "text-blue-600 scale-105 font-black"
+                        : "text-slate-500 hover:text-slate-800 font-bold"
+                    }`}
+                  >
+                    <UserPlus className={`w-5 h-5 transition-transform ${currentView === "member-add" ? "scale-110 text-blue-600" : "text-slate-400"}`} />
+                    <span className="text-[9px] tracking-tight">{t.memberAdd}</span>
+                  </button>
+                </>
+              )}
+
+              <button
+                onClick={() => onNavigate("profile")}
+                className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all duration-200 cursor-pointer ${
+                  currentView === "profile"
+                    ? "text-blue-600 scale-105 font-black"
+                    : "text-slate-500 hover:text-slate-800 font-bold"
+                }`}
+              >
+                <UserIcon className={`w-5 h-5 transition-transform ${currentView === "profile" ? "scale-110 text-blue-600" : "text-slate-400"}`} />
+                <span className="text-[9px] tracking-tight">{t.profile}</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -431,11 +476,11 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
               <span className="p-2 rounded-full bg-amber-50 text-amber-600">
                 <LogOut className="w-5 h-5" />
               </span>
-              <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">লগআউট নিশ্চিতকরণ</h3>
+              <h3 className="font-extrabold text-slate-800 text-sm sm:text-base">{t.logoutConfirmTitle}</h3>
             </div>
 
             <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed">
-              আপনি কি নিশ্চিতভাবে লগআউট করতে চান?
+              {t.logoutConfirmMsg}
             </p>
 
             <div className="flex gap-2.5 pt-3 border-t border-slate-100">
@@ -446,13 +491,13 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate }: G
                 }}
                 className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl text-xs font-bold transition cursor-pointer active:scale-95"
               >
-                হ্যাঁ, নিশ্চিত
+                {t.yesConfirm}
               </button>
               <button
                 onClick={() => setShowLogoutConfirm(false)}
                 className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
               >
-                বাতিল
+                {t.cancel}
               </button>
             </div>
           </div>

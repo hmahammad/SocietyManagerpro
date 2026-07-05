@@ -16,12 +16,17 @@ import {
 import { auth, db } from "../firebase";
 import { motion, AnimatePresence } from "motion/react";
 import { Lock, Building2, Eye, EyeOff, Mail, Phone, User, Landmark } from "lucide-react";
+import { normalizePhoneNumber } from "../utils/firestore";
+import { translations, Language } from "../utils/translations";
 
 interface AuthViewProps {
   onSuccess: () => void;
+  language?: Language;
+  setLanguage?: (lang: Language) => void;
 }
 
-export default function AuthView({ onSuccess }: AuthViewProps) {
+export default function AuthView({ onSuccess, language = "bn", setLanguage }: AuthViewProps) {
+  const t = translations[language];
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -52,8 +57,10 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
   };
 
   const getEmailFromIdentifier = async (identifier: string) => {
-    if (identifier.includes("@")) return identifier;
-    const q = query(collection(db, "users"), where("mobile", "==", identifier));
+    const trimmed = identifier.trim();
+    if (trimmed.includes("@")) return trimmed;
+    const normalized = normalizePhoneNumber(trimmed);
+    const q = query(collection(db, "users"), where("mobile", "==", normalized));
     const snap = await getDocs(q);
     if (!snap.empty) {
       return snap.docs[0].data().email as string;
@@ -64,7 +71,7 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginIdentifier || !loginPassword) {
-      setError("সবগুলো ফিল্ড পূরণ করুন");
+      setError(language === "bn" ? "সবগুলো ফিল্ড পূরণ করুন" : "Please fill in all fields");
       return;
     }
     setLoading(true);
@@ -77,11 +84,11 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
       }
 
       await signInWithEmailAndPassword(auth, targetEmail, loginPassword);
-      showToast("✅ লগইন সফল হয়েছে!");
+      showToast(t.loginSuccess);
       onSuccess();
     } catch (err: any) {
       console.error(err);
-      setError("ইমেইল/নম্বর অথবা পাসওয়ার্ড ভুল");
+      setError(t.loginError);
     } finally {
       setLoading(false);
     }
@@ -90,28 +97,29 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyName || !ownerName || !phone || !email || !password || !confirmPassword) {
-      showToast("❌ সব আবশ্যক ফিল্ড পূরণ করুন", "error");
+      showToast(t.allFieldsRequired, "error");
       return;
     }
 
-    const validPhone = /^01[3-9]\d{8}$/.test(phone);
+    const normalizedPhone = normalizePhoneNumber(phone);
+    const validPhone = /^01[3-9]\d{8}$/.test(normalizedPhone);
     if (!validPhone) {
-      showToast("❌ সঠিক বাংলাদেশি মোবাইল নম্বর দিন (যেমনঃ 01712345678)", "error");
+      showToast(t.phoneError, "error");
       return;
     }
 
     if (password.length < 6) {
-      showToast("❌ পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে", "error");
+      showToast(t.passwordLengthError, "error");
       return;
     }
 
     if (password !== confirmPassword) {
-      showToast("❌ পাসওয়ার্ড মিলেনি", "error");
+      showToast(t.passwordMismatch, "error");
       return;
     }
 
     if (!agree) {
-      showToast("❌ শর্তাবলী মেনে নিন", "error");
+      showToast(t.agreeTermsError, "error");
       return;
     }
 
@@ -132,7 +140,7 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
         userId: newUserId,
         companyName: companyName,
         name: ownerName,
-        mobile: phone,
+        mobile: normalizedPhone,
         email: email,
         role: "company",
         status: "pending",
@@ -363,10 +371,9 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
                       <input
                         type="tel"
                         value={phone}
-                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
+                        onChange={(e) => setPhone(e.target.value)}
                         className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-400 outline-none text-sm transition"
                         placeholder="01XXXXXXXXX"
-                        maxLength={11}
                         required
                       />
                     </div>

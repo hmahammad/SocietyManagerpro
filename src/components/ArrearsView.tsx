@@ -205,7 +205,7 @@ export default function ArrearsView({ currentUser, onNavigate }: ArrearsViewProp
           <AlertCircle className="w-5 h-5 animate-pulse" />
         </div>
         <div>
-          <h2 className="text-base font-extrabold text-slate-800 tracking-tight">বকেয়া তালিকা (Arrears Center)</h2>
+          <h2 className="text-base font-extrabold text-slate-800 tracking-tight">বকেয়া তালিকা (বকেয়া কেন্দ্র)</h2>
           <p className="text-[10px] text-slate-400 font-bold -mt-0.5">বকেয়া সেভিংস এবং কিস্তি লেজারের একনজরে তালিকা</p>
         </div>
       </div>
@@ -312,7 +312,7 @@ export default function ArrearsView({ currentUser, onNavigate }: ArrearsViewProp
                         <td className="px-5 py-4">
                           <div>
                             <span className="font-bold text-blue-700 text-xs block">{u.name}</span>
-                            <span className="text-[9px] text-slate-400 font-mono block mt-0.5">ID: {u.userId || "N/A"} • {u.mobile}</span>
+                            <span className="text-[9px] text-slate-400 font-mono block mt-0.5">আইডি: {u.userId || "তথ্য নেই"} • {u.mobile}</span>
                           </div>
                         </td>
 

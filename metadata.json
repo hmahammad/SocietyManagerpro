@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Association Manager",
+  "description": "A robust financial and member management system for associations and societies.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

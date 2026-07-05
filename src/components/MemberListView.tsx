@@ -320,21 +320,111 @@ export default function MemberListView({ currentUser, onNavigate }: MemberListVi
           </div>
         )}
 
-        {/* Status Tabs */}
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-          {["all", "active", "pending", "request", "deactive"].map((status) => (
-            <button
-              key={status}
-              onClick={() => setSelectedStatus(status)}
-              className={`text-[11px] px-3.5 py-1.5 rounded-full font-bold transition whitespace-nowrap shrink-0 ${
-                selectedStatus === status
-                  ? "bg-blue-600 text-white"
-                  : "bg-white text-slate-500 border border-slate-200"
+        {/* Status Overview Grid */}
+        <div className="bg-white p-4.5 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">সদস্য স্ট্যাটাস সারসংক্ষেপ</span>
+            {allUsers.filter((u) => u.status === "request").length > 0 && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-[9px] font-bold animate-pulse border border-blue-100">
+                ● নতুন অ্যাক্টিভেশন রিকোয়েস্ট পেন্ডিং
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Active Card */}
+            <div 
+              onClick={() => setSelectedStatus("active")}
+              className={`p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+                selectedStatus === "active" ? "bg-emerald-50/50 border-emerald-300 ring-1 ring-emerald-300" : "bg-slate-50/50 border-slate-100 hover:border-slate-200"
               }`}
             >
-              {status === "all" ? "সবাই" : STATUS_LABELS[status] || status}
-            </button>
-          ))}
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span>সক্রিয়</span>
+              </div>
+              <p className="text-base font-black text-slate-800 mt-2">
+                {toBanglaDigits(allUsers.filter((u) => u.status === "active").length)} জন
+              </p>
+            </div>
+
+            {/* Request Card */}
+            <div 
+              onClick={() => setSelectedStatus("request")}
+              className={`p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+                selectedStatus === "request" ? "bg-blue-50/50 border-blue-300 ring-1 ring-blue-300" : "bg-slate-50/50 border-slate-100 hover:border-blue-200/60"
+              } ${allUsers.filter((u) => u.status === "request").length > 0 ? "relative overflow-hidden" : ""}`}
+            >
+              {allUsers.filter((u) => u.status === "request").length > 0 && (
+                <div className="absolute top-0 right-0 w-2 h-2 bg-blue-500 rounded-bl-lg" />
+              )}
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600">
+                <span className={`w-1.5 h-1.5 rounded-full bg-blue-500 ${allUsers.filter((u) => u.status === "request").length > 0 ? "animate-ping" : ""}`} />
+                <span>রিকোয়েস্ট</span>
+              </div>
+              <p className="text-base font-black text-slate-800 mt-2">
+                {toBanglaDigits(allUsers.filter((u) => u.status === "request").length)} জন
+              </p>
+            </div>
+
+            {/* Pending Card */}
+            <div 
+              onClick={() => setSelectedStatus("pending")}
+              className={`p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+                selectedStatus === "pending" ? "bg-amber-50/50 border-amber-300 ring-1 ring-amber-300" : "bg-slate-50/50 border-slate-100 hover:border-slate-200"
+              }`}
+            >
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                <span>পেন্ডিং</span>
+              </div>
+              <p className="text-base font-black text-slate-800 mt-2">
+                {toBanglaDigits(allUsers.filter((u) => u.status === "pending").length)} জন
+              </p>
+            </div>
+
+            {/* Deactive Card */}
+            <div 
+              onClick={() => setSelectedStatus("deactive")}
+              className={`p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+                selectedStatus === "deactive" ? "bg-red-50/50 border-red-300 ring-1 ring-red-300" : "bg-slate-50/50 border-slate-100 hover:border-slate-200"
+              }`}
+            >
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-red-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                <span>নিষ্ক্রিয়</span>
+              </div>
+              <p className="text-base font-black text-slate-800 mt-2">
+                {toBanglaDigits(allUsers.filter((u) => u.status === "deactive").length)} জন
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Status Tabs */}
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+          {["all", "active", "pending", "request", "deactive"].map((status) => {
+            const count = status === "all"
+              ? allUsers.length
+              : allUsers.filter((u) => u.status === status).length;
+            return (
+              <button
+                key={status}
+                onClick={() => setSelectedStatus(status)}
+                className={`text-[11px] px-3.5 py-1.5 rounded-full font-bold transition whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                  selectedStatus === status
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                    : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                <span>{status === "all" ? "সবাই" : STATUS_LABELS[status] || status}</span>
+                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-black ${
+                  selectedStatus === status ? "bg-white/30 text-white" : "bg-slate-100 text-slate-500"
+                }`}>
+                  {toBanglaDigits(count)}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Savings Arrears & Member Stats Summary */}
@@ -345,7 +435,7 @@ export default function MemberListView({ currentUser, onNavigate }: MemberListVi
               <p className="text-xl font-black text-slate-800 mt-1">{toBanglaDigits(filteredList.length)} জন</p>
             </div>
             <div className="bg-indigo-50 text-indigo-600 p-2.5 rounded-xl text-xs font-bold font-mono">
-              USERS
+              সদস্য
             </div>
           </div>
           
@@ -355,7 +445,7 @@ export default function MemberListView({ currentUser, onNavigate }: MemberListVi
               <p className="text-xl font-black text-emerald-600 mt-1">৳{toBanglaDigits(formatBDT(filteredList.reduce((sum, m) => sum + (m.amount || 0), 0)))}</p>
             </div>
             <div className="bg-emerald-50 text-emerald-600 p-2.5 rounded-xl text-xs font-bold font-mono">
-              SAVINGS
+              সঞ্চয়
             </div>
           </div>
 
@@ -371,7 +461,7 @@ export default function MemberListView({ currentUser, onNavigate }: MemberListVi
               )}
             </div>
             <div className="bg-rose-100/50 text-rose-600 p-2.5 rounded-xl text-xs font-bold font-mono">
-              ARREARS
+              বকেয়া
             </div>
           </div>
         </div>

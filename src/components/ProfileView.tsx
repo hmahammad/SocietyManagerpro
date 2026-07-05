@@ -11,6 +11,7 @@ import {
   INVEST_LABELS,
   formatBDT,
   formatDate,
+  normalizePhoneNumber,
 } from "../utils/firestore";
 import {
   ArrowLeft,
@@ -390,14 +391,17 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
     if (!targetUser) return;
     setSaving(true);
     try {
+      const normMobile = normalizePhoneNumber(mobile);
+      const normWhatsapp = whatsapp.trim() ? normalizePhoneNumber(whatsapp) : "";
+      
       const activeId = targetId || currentUser.docId;
       const updateObj: Record<string, any> = {
         name: name.trim(),
         nidType,
         nidNumber: nidNumber.trim(),
         email: email.trim(),
-        mobile: mobile.trim(),
-        whatsapp: whatsapp.trim(),
+        mobile: normMobile,
+        whatsapp: normWhatsapp,
         dob,
         address: address.trim(),
         accountType,
@@ -462,14 +466,16 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
     if (!targetUser) return;
     setSaving(true);
     try {
+      const normMobile = normalizePhoneNumber(mobile);
+      const normWhatsapp = whatsapp.trim() ? normalizePhoneNumber(whatsapp) : "";
       const activeId = targetId || currentUser.docId;
       const updateObj: Record<string, any> = {
         name: name.trim(),
         nidType,
         nidNumber: nidNumber.trim(),
         email: email.trim(),
-        mobile: mobile.trim(),
-        whatsapp: whatsapp.trim(),
+        mobile: normMobile,
+        whatsapp: normWhatsapp,
         dob,
         address: address.trim(),
         profilePic,
@@ -481,6 +487,19 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
       };
 
       await updateDoc(doc(db, "users", activeId), updateObj);
+
+      // Create admin notification
+      await addDoc(collection(db, "notifications"), {
+        title: `${companyName.trim() || name.trim()} অ্যাক্টিভেশন রিকোয়েস্ট পাঠিয়েছে`,
+        body: `${name.trim()} (${companyName.trim()}) তাদের কোম্পানি আইডি অ্যাক্টিভেট করার জন্য রিকোয়েস্ট পাঠিয়েছে। অনুগ্রহ করে মেম্বার লিস্টে গিয়ে ভেরিফাই এবং অ্যাক্টিভেট করুন।`,
+        senderId: activeId,
+        senderName: companyName.trim() || name.trim(),
+        senderRole: "company",
+        targetType: "admin",
+        createdAt: new Date().toISOString(),
+        readBy: [],
+      });
+
       showToast("✅ অ্যাক্টিভেশন রিকোয়েস্ট সফলভাবে পাঠানো হয়েছে!");
       setTimeout(() => location.reload(), 1200);
     } catch (e) {

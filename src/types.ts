@@ -131,3 +131,52 @@ export interface Notification {
   readBy?: string[];
 }
 
+export interface TransactionRequest {
+  id: string;
+  companyId: string; // The company ID of the member
+  userId: string; // Doc ID of the user/member
+  userName: string;
+  userEmail?: string;
+  flow: "IN" | "OUT";
+  type: "saving" | "installment";
+  amount: number;
+  date: string;
+  memo: string;
+  paymentMethod: "mobile_banking" | "bank" | "cash"; // Modified to support 'cash'
+
+  // Mobile Details
+  mobileProvider?: "bkash" | "nagad" | "rocket" | "upay" | "";
+  mobileAccountNo?: string;
+  mobileTrxId?: string;
+
+  // Bank Details
+  bankName?: string;
+  bankBranch?: string;
+  bankAccountNo?: string;
+  bankTrxId?: string;
+
+  // Installment reference if any
+  installmentId?: string;
+  installmentName?: string;
+
+  status: "pending" | "approved" | "rejected";
+  rejectedReason?: string;
+  createdAt: string;
+  processedAt?: string;
+  processedBy?: string; // Name or ID of company/admin who processed
+}
+
+export interface CompanyPaymentAccount {
+  id: string;
+  companyId: string;
+  type: "mobile_banking" | "bank";
+  providerName: string; // e.g. "bKash", "Nagad", or Bank Name
+  accountNumber: string;
+  accountType?: string; // e.g. "Personal", "Agent", "Merchant" or Bank Branch/Name
+  accountName?: string; // Account holder's name
+  isActive: boolean;
+  createdAt: string;
+}
+
+
+

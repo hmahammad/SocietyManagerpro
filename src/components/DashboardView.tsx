@@ -624,14 +624,25 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       const calc = memberCalculations[currentUser.docId] || { expense: 0, income: 0 };
       const myUser = users.find((u) => u.docId === currentUser.docId) || currentUser;
       const myDeposit = Number(myUser.amount || 0);
-      const myBalance = myDeposit - calc.expense + calc.income;
+      const myBalance = myDeposit - calc.expense;
+
+      // Find member's own installments and their due amount
+      const myInstallments = companyInstallments.filter((inst) => 
+        inst.customerName?.trim().toLowerCase() === currentUser.name?.trim().toLowerCase()
+      );
+      const myDue = myInstallments.reduce((sum, inst) => {
+        const paid = (inst.schedule || [])
+          .filter((s) => s.status === "paid")
+          .reduce((stepSum, s) => stepSum + Number(s.amount || 0), 0);
+        return sum + Math.max(0, Number(inst.totalAmount || 0) - Number(inst.downPayment || 0) - paid);
+      }, 0);
 
       return {
         totalDeposit: myDeposit,
         totalExpense: calc.expense,
         totalIncome: calc.income,
         totalBalance: myBalance,
-        totalDue: 0, // Restricted members don't see installment due
+        totalDue: myDue,
         globalTotalDeposit,
         globalTotalExpense: totalExpense,
         globalTotalIncome: totalIncome,
@@ -1686,39 +1697,66 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       <div className="px-4 mt-1">
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-4">
           <div className="grid grid-cols-2 gap-3.5">
-            <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
-              <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">মোট ইনভেস্ট</p>
-              <p className="text-blue-600 font-bold text-sm mt-0.5">৳{formatNum(totalDeposit)}</p>
-            </div>
-            <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
-              <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">মোট খরচ</p>
-              <p className="text-rose-500 font-bold text-sm mt-0.5">৳{formatNum(totalExpense)}</p>
-            </div>
-            <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
-              <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">মোট আয়</p>
-              <p className="text-emerald-600 font-bold text-sm mt-0.5">৳{formatNum(totalIncome)}</p>
-            </div>
-            <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
-              <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">নগদ ক্যাশ</p>
-              <p className="text-emerald-600 font-bold text-sm mt-0.5">৳{formatNum(totalBalance)}</p>
-            </div>
-            <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
-              <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">বাকি (কিস্তি)</p>
-              <p className="text-rose-500 font-bold text-sm mt-0.5">৳{formatNum(totalDue)}</p>
-            </div>
-            <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
-              <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">বকেয়া সেভিংস</p>
-              {arrearsLoading ? (
-                <p className="text-rose-500 font-bold text-xs mt-1 animate-pulse">লোড হচ্ছে...</p>
-              ) : (
-                <button
-                  onClick={() => onNavigate("arrears")}
-                  className="text-rose-500 font-extrabold text-sm mt-0.5 hover:underline block mx-auto"
-                >
-                  ৳{formatNum(totalArrearsAmount)}
-                </button>
-              )}
-            </div>
+            {currentUser.role === "member" && !currentUser.canSeeAllData ? (
+              <>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">মোট জমা (ডিপোজিট)</p>
+                  <p className="text-blue-600 font-bold text-sm mt-0.5">৳{formatNum(totalDeposit)}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">সক্রিয় ব্যালেন্স</p>
+                  <p className="text-blue-600 font-bold text-sm mt-0.5">৳{formatNum(totalBalance)}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">শেয়ার ইনভেস্টমেন্ট (খরচ)</p>
+                  <p className="text-rose-500 font-bold text-sm mt-0.5">৳{formatNum(totalExpense)}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">শেয়ার লভ্যাংশ (আয়)</p>
+                  <p className="text-emerald-600 font-bold text-sm mt-0.5">৳{formatNum(totalIncome)}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center col-span-2">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">মোট সম্পদ (নেট মূল্য)</p>
+                  <p className="text-emerald-600 font-bold text-sm mt-0.5">৳{formatNum(totalBalance + totalIncome)}</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">মোট ইনভেস্ট</p>
+                  <p className="text-blue-600 font-bold text-sm mt-0.5">৳{formatNum(totalDeposit)}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">মোট খরচ</p>
+                  <p className="text-rose-500 font-bold text-sm mt-0.5">৳{formatNum(totalExpense)}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">মোট আয়</p>
+                  <p className="text-emerald-600 font-bold text-sm mt-0.5">৳{formatNum(totalIncome)}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">নগদ ক্যাশ</p>
+                  <p className="text-emerald-600 font-bold text-sm mt-0.5">৳{formatNum(totalBalance)}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">বাকি (কিস্তি)</p>
+                  <p className="text-rose-500 font-bold text-sm mt-0.5">৳{formatNum(totalDue)}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">বকেয়া সেভিংস</p>
+                  {arrearsLoading ? (
+                    <p className="text-rose-500 font-bold text-xs mt-1 animate-pulse">লোড হচ্ছে...</p>
+                  ) : (
+                    <button
+                      onClick={() => onNavigate("arrears")}
+                      className="text-rose-500 font-extrabold text-sm mt-0.5 hover:underline block mx-auto"
+                    >
+                      ৳{formatNum(totalArrearsAmount)}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -1743,17 +1781,15 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
           প্রজেক্ট
           {activeTab === "projects" && <span className="absolute bottom-0 left-1/4 right-1/4 h-[3px] bg-blue-600 rounded-full"></span>}
         </button>
-        {!(currentUser.role === "member" && !currentUser.canSeeAllData) && (
-          <button
-            onClick={() => setActiveTab("ledger")}
-            className={`flex-1 py-4 text-xs font-bold transition-all relative ${
-              activeTab === "ledger" ? "text-blue-600 bg-blue-50/40" : "text-slate-400"
-            }`}
-          >
-            কিস্তি লেজার
-            {activeTab === "ledger" && <span className="absolute bottom-0 left-1/4 right-1/4 h-[3px] bg-blue-600 rounded-full"></span>}
-          </button>
-        )}
+        <button
+          onClick={() => setActiveTab("ledger")}
+          className={`flex-1 py-4 text-xs font-bold transition-all relative ${
+            activeTab === "ledger" ? "text-blue-600 bg-blue-50/40" : "text-slate-400"
+          }`}
+        >
+          {currentUser.role === "member" && !currentUser.canSeeAllData ? "আমার কিস্তি" : "কিস্তি লেজার"}
+          {activeTab === "ledger" && <span className="absolute bottom-0 left-1/4 right-1/4 h-[3px] bg-blue-600 rounded-full"></span>}
+        </button>
       </div>
 
       {/* Tab Panels */}
@@ -1762,14 +1798,15 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
         {activeTab === "invest" && (
           <div className="bg-white rounded-2xl border border-slate-200 overflow-x-auto shadow-sm">
             <table className="min-w-max w-full text-xs text-left divide-y divide-slate-100">
-              <thead className="bg-slate-50 text-slate-500 uppercase tracking-wide">
+              <thead className="bg-slate-50 text-slate-500 uppercase tracking-wide font-extrabold text-[10px]">
                 <tr>
                   <th className="p-3">নাম</th>
-                  <th className="p-3 text-right">সঞ্চয়</th>
+                  <th className="p-3 text-right">মোট জমা (ডিপোজিট)</th>
                   <th className="p-3 text-center">শেয়ার %</th>
-                  <th className="p-3 text-right">খরচ</th>
-                  <th className="p-3 text-right">আয়</th>
-                  <th className="p-3 text-right">ব্যালেন্স</th>
+                  <th className="p-3 text-right text-rose-500">শেয়ার ইনভেস্টমেন্ট (খরচ)</th>
+                  <th className="p-3 text-right text-blue-600">সক্রিয় ব্যালেন্স</th>
+                  <th className="p-3 text-right text-emerald-600 font-extrabold">শেয়ার লভ্যাংশ (আয়)</th>
+                  <th className="p-3 text-right font-black">মোট নেট মূল্য</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1789,7 +1826,12 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                   .map((u) => {
                     const uAmt = parseFloat(String(u.amount || 0)) || 0;
                     const calc = memberCalculations[u.docId] || { expense: 0, income: 0, shareText: "0.0%" };
-                    const finalBalance = u.accountType === "saving" ? uAmt : uAmt - calc.expense + calc.income;
+                    
+                    const isSaving = u.accountType === "saving";
+                    const shareInvestment = isSaving ? 0 : calc.expense;
+                    const activeBalance = isSaving ? uAmt : uAmt - calc.expense;
+                    const shareProfit = isSaving ? 0 : calc.income;
+                    const netWorth = activeBalance + shareProfit;
 
                     return (
                       <tr
@@ -1800,10 +1842,11 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                         <td className="p-3 font-bold text-blue-700">{u.name}</td>
                         <td className="p-3 text-right font-bold text-slate-700">৳{formatNum(uAmt)}</td>
                         <td className="p-3 text-center text-blue-600 font-bold">{calc.shareText}</td>
-                        <td className="p-3 text-right text-rose-500 font-bold">৳{formatNum(calc.expense)}</td>
-                        <td className="p-3 text-right text-emerald-600 font-bold">৳{formatNum(calc.income)}</td>
-                        <td className={`p-3 text-right font-bold ${finalBalance >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
-                          ৳{formatNum(finalBalance)}
+                        <td className="p-3 text-right text-rose-500 font-bold">৳{formatNum(shareInvestment)}</td>
+                        <td className="p-3 text-right text-blue-600 font-bold">৳{formatNum(activeBalance)}</td>
+                        <td className="p-3 text-right text-emerald-600 font-bold">৳{formatNum(shareProfit)}</td>
+                        <td className={`p-3 text-right font-black ${netWorth >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
+                          ৳{formatNum(netWorth)}
                         </td>
                       </tr>
                     );
@@ -1822,6 +1865,13 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                   <th className="p-3 text-left">প্রজেক্ট</th>
                   <th className="p-3 text-right">বাজেট</th>
                   <th className="p-3 text-right">মোট ইনভেস্ট</th>
+                  {currentUser.role === "member" && (
+                    <>
+                      <th className="p-3 text-right">আমার শেয়ার</th>
+                      <th className="p-3 text-right">আমার ইনভেস্ট</th>
+                      <th className="p-3 text-right">আমার লভ্যাংশ</th>
+                    </>
+                  )}
                   <th className="p-3 text-right">অতিরিক্ত/বাকি</th>
                   <th className="p-3 text-right">খরচ</th>
                   <th className="p-3 text-right">আয়</th>
@@ -1843,6 +1893,13 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                     const budget = p.budget || 0;
                     const diff = totalInv - budget;
 
+                    // Calculate member's own participation
+                    const uShare = (memberProjectsShare[currentUser.docId] || {})[p.id] || 0;
+                    const uSpec = (memberSpecialInvMap[currentUser.docId] || {})[p.id] || 0;
+                    const uGen = memberGeneralInv[currentUser.docId] || 0;
+                    const uTotalInv = uSpec + uGen;
+                    const myProfit = uShare * profit;
+
                     return (
                       <tr
                         key={p.id}
@@ -1852,6 +1909,15 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                         <td className="p-3 font-bold text-blue-700">{p.name}</td>
                         <td className="p-3 text-right font-bold text-slate-600">৳{formatNum(budget)}</td>
                         <td className="p-3 text-right font-bold text-blue-600">৳{formatNum(totalInv)}</td>
+                        {currentUser.role === "member" && (
+                          <>
+                            <td className="p-3 text-right font-extrabold text-blue-600">{(uShare * 100).toFixed(1)}%</td>
+                            <td className="p-3 text-right font-bold text-slate-700">৳{formatNum(uTotalInv)}</td>
+                            <td className={`p-3 text-right font-bold ${myProfit >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
+                              ৳{formatNum(myProfit)}
+                            </td>
+                          </>
+                        )}
                         <td className="p-3 text-right font-bold">
                           {diff > 0 ? (
                             <span className="text-amber-600 font-extrabold">+৳{formatNum(diff)} <span className="text-[10px] text-amber-500 font-medium">(অতিরিক্ত)</span></span>
@@ -1900,7 +1966,9 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                 {installments
                   .filter((item) => {
                     if (currentUser.role === "admin") return true;
-                    if (currentUser.role === "member" && !currentUser.canSeeAllData) return false;
+                    if (currentUser.role === "member" && !currentUser.canSeeAllData) {
+                      return item.companyId === currentUser.companyId && item.customerName?.trim().toLowerCase() === currentUser.name?.trim().toLowerCase();
+                    }
                     const targetCompanyId = currentUser.role === "company" ? currentUser.docId : currentUser.companyId;
                     return item.companyId === targetCompanyId;
                   })
@@ -3444,6 +3512,33 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                   {currentProject.desc || "কোনো বিবরণী লেখা নেই।"}
                 </p>
               </div>
+
+              {/* MY SHARE AND PARTICIPATION CARD (FOR MEMBERS ONLY) */}
+              {currentUser.role === "member" && (
+                <div className="bg-indigo-50 border border-indigo-100 p-3.5 rounded-2xl space-y-1.5 text-xs animate-fadeIn">
+                  <h4 className="font-extrabold text-indigo-950 flex items-center gap-1 uppercase tracking-wider text-[11px]">
+                    🎯 আমার অংশীদারি ও লভ্যাংশ বিবরণ
+                  </h4>
+                  <div className="flex justify-between mt-1">
+                    <span className="text-indigo-700 font-medium">আমার শেয়ারঃ</span>
+                    <span className="font-black text-indigo-950">
+                      {(((memberProjectsShare[currentUser.docId] || {})[currentProject.id] || 0) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-indigo-700 font-medium">আমার মোট ইনভেস্টঃ</span>
+                    <span className="font-bold text-indigo-950">
+                      ৳{formatNum(((memberSpecialInvMap[currentUser.docId] || {})[currentProject.id] || 0) + (memberGeneralInv[currentUser.docId] || 0))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-t border-indigo-100/50 pt-1.5 font-bold">
+                    <span className="text-indigo-900">আমার লভ্যাংশ (লাভ/ক্ষতি থেকে)ঃ</span>
+                    <span className={(((memberProjectsShare[currentUser.docId] || {})[currentProject.id] || 0) * ((projSummary[currentProject.id] || { sale: 0, expense: 0 }).sale - (projSummary[currentProject.id] || { sale: 0, expense: 0 }).expense) >= 0 ? "text-emerald-600 font-extrabold" : "text-rose-600 font-extrabold")}>
+                      ৳{formatNum(((memberProjectsShare[currentUser.docId] || {})[currentProject.id] || 0) * ((projSummary[currentProject.id] || { sale: 0, expense: 0 }).sale - (projSummary[currentProject.id] || { sale: 0, expense: 0 }).expense))}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* BUDGET & INVESTMENT ANALYSIS SECTION */}
               <div className="border-b pb-2 space-y-2">

@@ -4,6 +4,7 @@ import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { db, secondaryAuth } from "../firebase";
 import { User } from "../types";
 import { ArrowLeft, UserPlus, Eye, EyeOff, Camera, Landmark } from "lucide-react";
+import { normalizePhoneNumber } from "../utils/firestore";
 
 interface MemberAddViewProps {
   currentUser: User;
@@ -128,7 +129,8 @@ export default function MemberAddView({ currentUser, onNavigate }: MemberAddView
     const errs: Record<string, string> = {};
     if (!name) errs.name = "মেম্বারের নাম লিখুন";
 
-    const validPhone = /^01[3-9]\d{8}$/.test(phone);
+    const normalizedPhone = normalizePhoneNumber(phone);
+    const validPhone = /^01[3-9]\d{8}$/.test(normalizedPhone);
     if (!validPhone) errs.phone = "সঠিক বাংলাদেশি মোবাইল নম্বর দিন (১১ সংখ্যা)";
 
     const validEmail = email && email.includes("@") && email.includes(".");
@@ -153,6 +155,8 @@ export default function MemberAddView({ currentUser, onNavigate }: MemberAddView
 
     setLoading(true);
     try {
+      const normalizedPhone = normalizePhoneNumber(phone);
+
       // 1. Check if email already used in firebase
       // Create user with secondary Auth to prevent logging current company/admin out
       const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
@@ -176,7 +180,7 @@ export default function MemberAddView({ currentUser, onNavigate }: MemberAddView
         userId: memberId,
         name: name,
         email: email,
-        mobile: phone,
+        mobile: normalizedPhone,
         dob: dob,
         nidNumber: nidNumber,
         nidType: nidType,
@@ -269,12 +273,11 @@ export default function MemberAddView({ currentUser, onNavigate }: MemberAddView
               <input
                 type="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
+                onChange={(e) => setPhone(e.target.value)}
                 className={`w-full px-4 py-2.5 rounded-xl border outline-none text-sm font-medium transition ${
                   errors.phone ? "border-rose-400 ring-1 ring-rose-400" : "border-slate-200 focus:border-blue-400"
                 }`}
                 placeholder="01XXXXXXXXX"
-                maxLength={11}
               />
               {errors.phone && <p className="text-rose-500 text-[10px] mt-1 font-semibold">{errors.phone}</p>}
             </div>
