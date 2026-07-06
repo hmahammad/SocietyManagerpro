@@ -34,6 +34,8 @@ import {
   Upload,
 } from "lucide-react";
 
+const writtenArrearsKeysGlobal = new Set<string>();
+
 interface ProfileViewProps {
   currentUser: User;
   targetId?: string | null;
@@ -187,7 +189,8 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
       let cur = new Date(startDate.getFullYear(), startDate.getMonth(), dayOfMonth);
       while (cur <= today) {
         const key = `arrears-${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`;
-        if (!existingKeys.has(key)) {
+        const cacheKey = `${userId}-${key}`;
+        if (!existingKeys.has(key) && !writtenArrearsKeysGlobal.has(cacheKey)) {
           // Check if a real payment was made this month
           const hasPayment = existingDocs.some((h) => {
             if (h.type === "savings_arrears") return false;
@@ -196,6 +199,7 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
             return hd.getFullYear() === cur.getFullYear() && hd.getMonth() === cur.getMonth();
           });
           if (!hasPayment) {
+            writtenArrearsKeysGlobal.add(cacheKey);
             toAdd.push({
               key,
               date: `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(
@@ -211,13 +215,15 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
       let curYear = startDate.getFullYear();
       while (curYear <= today.getFullYear()) {
         const key = `arrears-${curYear}`;
-        if (!existingKeys.has(key)) {
+        const cacheKey = `${userId}-${key}`;
+        if (!existingKeys.has(key) && !writtenArrearsKeysGlobal.has(cacheKey)) {
           const hasPayment = existingDocs.some((h) => {
             if (h.type === "savings_arrears") return false;
             if (!h.date) return false;
             return new Date(h.date).getFullYear() === curYear;
           });
           if (!hasPayment) {
+            writtenArrearsKeysGlobal.add(cacheKey);
             toAdd.push({
               key,
               date: `${curYear}-${String(investDateObj.getMonth() + 1).padStart(
@@ -389,6 +395,13 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
 
   const handleSaveProfile = async () => {
     if (!targetUser) return;
+    if (nidNumber.trim()) {
+      const cleanNid = nidNumber.replace(/\D/g, "");
+      if (cleanNid.length < 10 || cleanNid.length > 17) {
+        showToast("❌ পরিচয়পত্র নম্বরটি ১০ থেকে ১৭ ডিজিটের হতে হবে", "error");
+        return;
+      }
+    }
     setSaving(true);
     try {
       const normMobile = normalizePhoneNumber(mobile);
@@ -464,6 +477,13 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
 
   const handleRequestActivation = async () => {
     if (!targetUser) return;
+    if (nidNumber.trim()) {
+      const cleanNid = nidNumber.replace(/\D/g, "");
+      if (cleanNid.length < 10 || cleanNid.length > 17) {
+        showToast("❌ পরিচয়পত্র নম্বরটি ১০ থেকে ১৭ ডিজিটের হতে হবে", "error");
+        return;
+      }
+    }
     setSaving(true);
     try {
       const normMobile = normalizePhoneNumber(mobile);
@@ -767,18 +787,16 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
             </span>
             <div className="grid grid-cols-2 gap-3 mt-3">
               <div className="bg-emerald-50 rounded-2xl p-3 text-center">
-                <p className="text-[9px] font-bold text-emerald-600 uppercase mb-1">মোট সঞ্চয়</p>
-                <p className="text-xl font-bold text-emerald-700">৳{formatBDT(targetUser.amount || 0)}</p>
+                <p className="text-[9px] font-bold text-emerald-600 uppercase mb-1">সেভিংস ব্যালেন্স</p>
+                <p className="text-xl font-bold text-emerald-700">৳{formatBDT(targetUser.savingsBalance !== undefined ? targetUser.savingsBalance : (targetUser.amount || 0))}</p>
               </div>
               <div className="bg-indigo-50 rounded-2xl p-3 text-center">
-                <p className="text-[9px] font-bold text-indigo-600 uppercase mb-1">মোট কিস্তি</p>
-                <p className="text-xl font-bold text-indigo-700">
-                  {history.filter((h) => h.type !== "savings_arrears").length} বার
-                </p>
+                <p className="text-[9px] font-bold text-indigo-600 uppercase mb-1">ইনভেস্ট ব্যালেন্স</p>
+                <p className="text-xl font-bold text-indigo-700">৳{formatBDT(targetUser.investBalance || 0)}</p>
               </div>
               <div className="bg-blue-50 rounded-2xl p-3 text-center">
-                <p className="text-[9px] font-bold text-blue-600 uppercase mb-1">প্রতি কিস্তি</p>
-                <p className="text-xl font-bold text-blue-700">৳{formatBDT(targetUser.investAmount || 0)}</p>
+                <p className="text-[9px] font-bold text-blue-600 uppercase mb-1">ইনকাম ব্যালেন্স</p>
+                <p className="text-xl font-bold text-blue-700">৳{formatBDT(targetUser.incomeBalance || 0)}</p>
               </div>
               <div className="bg-rose-50 rounded-2xl p-3 text-center">
                 <p className="text-[9px] font-bold text-rose-600 uppercase mb-1">সঞ্চয় বকেয়া</p>
@@ -1089,8 +1107,9 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
                   type="text"
                   disabled={!editable}
                   value={nidNumber}
-                  onChange={(e) => setNidNumber(e.target.value)}
+                  onChange={(e) => setNidNumber(e.target.value.replace(/\D/g, "").slice(0, 17))}
                   className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl text-xs font-semibold focus:bg-white focus:border-indigo-500 disabled:opacity-75"
+                  placeholder="১০-১৭ ডিজিট"
                 />
               </div>
             </div>

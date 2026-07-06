@@ -160,9 +160,8 @@ export default function ArrearsView({ currentUser, onNavigate }: ArrearsViewProp
   const filteredInstallments = installments
     .map((inst) => {
       const paidTotal = (inst.schedule || [])
-        .filter((s) => s.status === "paid")
-        .reduce((sum, s) => sum + Number(s.amount || 0), 0);
-      const remainingDue = Number(inst.totalAmount || 0) - Number(inst.downPayment || 0) - paidTotal;
+        .reduce((sum, s) => sum + Number(s.paidAmount || 0), 0);
+      const remainingDue = (inst.schedule || []).reduce((sum, s) => sum + Math.max(0, Number(s.amount || 0) - Number(s.paidAmount || 0)), 0);
 
       // Find last paid installment step date
       let lastPaidDate = "";
@@ -245,13 +244,13 @@ export default function ArrearsView({ currentUser, onNavigate }: ArrearsViewProp
           <CreditCard className="w-4 h-4" />
           💳 কিস্তি বকেয়া
           {installments.filter(i => {
-            const paid = (i.schedule || []).filter(s => s.status === "paid").reduce((sum, s) => sum + Number(s.amount || 0), 0);
-            return (Number(i.totalAmount || 0) - Number(i.downPayment || 0) - paid) > 0;
+            const due = (i.schedule || []).reduce((sum, s) => sum + Math.max(0, Number(s.amount || 0) - Number(s.paidAmount || 0)), 0);
+            return due > 0;
           }).length > 0 && (
             <span className="text-[9px] bg-rose-600 text-white font-extrabold px-1.5 py-0.2 rounded-full">
               {toBanglaDigits(installments.filter(i => {
-                const paid = (i.schedule || []).filter(s => s.status === "paid").reduce((sum, s) => sum + Number(s.amount || 0), 0);
-                return (Number(i.totalAmount || 0) - Number(i.downPayment || 0) - paid) > 0;
+                const due = (i.schedule || []).reduce((sum, s) => sum + Math.max(0, Number(s.amount || 0) - Number(s.paidAmount || 0)), 0);
+                return due > 0;
               }).length)}
             </span>
           )}
@@ -482,11 +481,8 @@ export default function ArrearsView({ currentUser, onNavigate }: ArrearsViewProp
                   <span className="text-slate-400 text-[10px] uppercase font-bold block">বাকি পরিমাণ</span>
                   <span className="text-rose-600 font-extrabold text-xs block mt-0.5">
                     ৳{formatNum(
-                      Number(selectedInstallment.totalAmount || 0) -
-                      Number(selectedInstallment.downPayment || 0) -
                       (selectedInstallment.schedule || [])
-                        .filter((s) => s.status === "paid")
-                        .reduce((sum, s) => sum + Number(s.amount || 0), 0)
+                        .reduce((sum, s) => sum + Math.max(0, Number(s.amount || 0) - Number(s.paidAmount || 0)), 0)
                     )}
                   </span>
                 </div>

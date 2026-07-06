@@ -37,6 +37,11 @@ export default function NotificationsView({ currentUser, onNavigate }: Notificat
 
         // Filter based on user's role and company membership
         const filtered = list.filter((n) => {
+          // Company ID active request / admin-targeted notifications should ONLY show for admin
+          if (n.targetType === "admin" && currentUser.role !== "admin") {
+            return false;
+          }
+
           // Admins can see everything
           if (currentUser.role === "admin") return true;
 
@@ -130,6 +135,37 @@ export default function NotificationsView({ currentUser, onNavigate }: Notificat
       });
     } catch (err) {
       console.error("Error marking notification as read:", err);
+    }
+  };
+
+  const handleNotificationClick = async (n: Notification) => {
+    const isRead = n.readBy?.includes(currentUser.docId);
+    if (!isRead) {
+      await handleMarkAsRead(n.docId);
+    }
+
+    const titleText = n.title || "";
+    const bodyText = n.body || "";
+
+    if (
+      titleText.includes("অ্যাক্টিভেশন") ||
+      titleText.includes("অ্যাক্টিভেট") ||
+      bodyText.includes("অ্যাক্টিভেট") ||
+      bodyText.includes("অ্যাক্টিভেশন") ||
+      n.targetType === "admin"
+    ) {
+      if (n.senderId) {
+        onNavigate("profile", { id: n.senderId });
+      } else {
+        onNavigate("member-list");
+      }
+    } else if (
+      titleText.includes("ট্রানজেকশন") ||
+      titleText.includes("ক্যাশ") ||
+      bodyText.includes("ক্যাশ") ||
+      bodyText.includes("ট্রানজেকশন")
+    ) {
+      onNavigate("transactions");
     }
   };
 
@@ -315,9 +351,9 @@ export default function NotificationsView({ currentUser, onNavigate }: Notificat
             return (
               <div
                 key={n.docId}
-                onClick={() => !isRead && handleMarkAsRead(n.docId)}
-                className={`bg-white border rounded-3xl p-4 sm:p-5 transition-all shadow-xs hover:shadow-md flex flex-col sm:flex-row gap-4 items-start ${
-                  isRead ? "border-slate-100" : "border-indigo-100 bg-gradient-to-tr from-white to-indigo-50/10"
+                onClick={() => handleNotificationClick(n)}
+                className={`bg-white border rounded-3xl p-4 sm:p-5 transition-all shadow-xs hover:shadow-md flex flex-col sm:flex-row gap-4 items-start cursor-pointer ${
+                  isRead ? "border-slate-100 hover:border-slate-200" : "border-indigo-100 bg-gradient-to-tr from-white to-indigo-50/10 hover:border-indigo-300"
                 }`}
               >
                 {/* Sender badge/avatar */}
@@ -341,15 +377,6 @@ export default function NotificationsView({ currentUser, onNavigate }: Notificat
                         : "bg-blue-500/10 text-blue-700"
                     }`}>
                       {n.senderRole === "admin" ? "অ্যাডমিন" : "কোম্পানি"}
-                    </span>
-
-                    {/* Target tag */}
-                    <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">
-                      {n.targetType === "all_companies"
-                        ? "🎯 সকল কোম্পানি"
-                        : n.targetType === "all_members"
-                        ? "🎯 সকল মেম্বার"
-                        : "🎯 কোম্পানি মেম্বারগণ"}
                     </span>
 
                     {!isRead && (

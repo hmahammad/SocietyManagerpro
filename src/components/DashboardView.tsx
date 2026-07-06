@@ -47,6 +47,39 @@ import {
   Upload,
 } from "lucide-react";
 
+const writtenArrearsKeysGlobal = new Set<string>();
+
+const calculateProjectDurationBn = (startStr: string, endStr: string): string => {
+  if (!startStr || !endStr) return "";
+  const start = new Date(startStr);
+  const end = new Date(endStr);
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return "";
+
+  let years = end.getFullYear() - start.getFullYear();
+  let months = end.getMonth() - start.getMonth();
+  let days = end.getDate() - start.getDate();
+
+  if (days < 0) {
+    const prevMonth = new Date(end.getFullYear(), end.getMonth(), 0);
+    days += prevMonth.getDate();
+    months -= 1;
+  }
+  if (months < 0) {
+    months += 12;
+    years -= 1;
+  }
+
+  const bnDigits = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
+  const toBnNum = (n: number) => String(n).split("").map(c => bnDigits[parseInt(c, 10)] || c).join("");
+
+  const parts = [];
+  if (years > 0) parts.push(`${toBnNum(years)} বছর`);
+  if (months > 0) parts.push(`${toBnNum(months)} মাস`);
+  if (days > 0) parts.push(`${toBnNum(days)} দিন`);
+
+  return parts.join(" ") || "০ দিন";
+};
+
 interface DashboardViewProps {
   currentUser: User;
   onNavigate: (view: string, params?: any) => void;
@@ -312,7 +345,8 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
           let cur = new Date(startDate.getFullYear(), startDate.getMonth(), dayOfMonth);
           while (cur <= today) {
             const key = `arrears-${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`;
-            if (!existingKeys.has(key)) {
+            const cacheKey = `${d.docId}-${key}`;
+            if (!existingKeys.has(key) && !writtenArrearsKeysGlobal.has(cacheKey)) {
               // Check if a real payment was made this month
               const hasPayment = existingDocs.some((h) => {
                 if (h.type === "savings_arrears") return false;
@@ -321,6 +355,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                 return hd.getFullYear() === cur.getFullYear() && hd.getMonth() === cur.getMonth();
               });
               if (!hasPayment) {
+                writtenArrearsKeysGlobal.add(cacheKey);
                 toAdd.push({
                   key,
                   date: `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(
@@ -336,13 +371,15 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
           let curYear = startDate.getFullYear();
           while (curYear <= today.getFullYear()) {
             const key = `arrears-${curYear}`;
-            if (!existingKeys.has(key)) {
+            const cacheKey = `${d.docId}-${key}`;
+            if (!existingKeys.has(key) && !writtenArrearsKeysGlobal.has(cacheKey)) {
               const hasPayment = existingDocs.some((h) => {
                 if (h.type === "savings_arrears") return false;
                 if (!h.date) return false;
                 return new Date(h.date).getFullYear() === curYear;
               });
               if (!hasPayment) {
+                writtenArrearsKeysGlobal.add(cacheKey);
                 toAdd.push({
                   key,
                   date: `${curYear}-${String(investDateObj.getMonth() + 1).padStart(
@@ -382,6 +419,70 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
 
     runAutoCheck();
   }, [users, allHistories, currentUser]);
+
+  // Synchronize computed balances (savingsBalance, investBalance, incomeBalance) to Firestore
+  useEffect(() => {
+    if (users.length === 0 || allHistories.length === 0) return;
+
+    const syncBalances = async () => {
+      const { companyMembers, memberCalculations } = getProjectInvestmentsAndShares();
+
+      for (const m of companyMembers) {
+        const calc = memberCalculations[m.docId];
+        if (!calc) continue;
+
+        const currentSavings = Math.max(0, parseFloat(calc.savingsBalance.toFixed(2)));
+        const currentInvest = Math.max(0, parseFloat(calc.investBalance.toFixed(2)));
+        const currentIncome = Math.max(0, parseFloat(calc.incomeBalance.toFixed(2)));
+
+        // Only update if there is a mismatch
+        if (
+          m.savingsBalance !== currentSavings ||
+          m.investBalance !== currentInvest ||
+          m.incomeBalance !== currentIncome ||
+          m.amount !== currentSavings // Keep amount field in sync with savingsBalance for legacy/compatibility
+        ) {
+          try {
+            const userRef = doc(db, "users", m.docId);
+            await updateDoc(userRef, {
+              savingsBalance: currentSavings,
+              investBalance: currentInvest,
+              incomeBalance: currentIncome,
+              amount: currentSavings, // savings balance is represented as amount for legacy views
+            });
+            console.log(`Synced balances for ${m.name}: Savings: ${currentSavings}, Invest: ${currentInvest}, Income: ${currentIncome}`);
+          } catch (err) {
+            console.error(`Failed to sync balances for ${m.name}:`, err);
+          }
+        }
+      }
+    };
+
+    syncBalances();
+  }, [users, allHistories, projects, transactions, installments, currentUser]);
+
+  // Auto-calculate project duration based on start and end dates for new project
+  useEffect(() => {
+    if (newProjStartDate && newProjEndDate) {
+      const computed = calculateProjectDurationBn(newProjStartDate, newProjEndDate);
+      if (computed) {
+        setNewProjDuration(computed);
+      }
+    }
+  }, [newProjStartDate, newProjEndDate]);
+
+  // Auto-calculate project duration based on start and end dates for editing project
+  useEffect(() => {
+    if (editingProject && editingProject.startDate && editingProject.endDate) {
+      const computed = calculateProjectDurationBn(editingProject.startDate, editingProject.endDate);
+      if (computed && computed !== editingProject.duration) {
+        setEditingProject({
+          ...editingProject,
+          duration: computed,
+        });
+      }
+    }
+  }, [editingProject?.startDate, editingProject?.endDate]);
 
   // Helper to calculate project investments, member shares, and individual member expenses/income
   const getProjectInvestmentsAndShares = () => {
@@ -425,56 +526,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       }
     });
 
-    // 6. For each business member, calculate their special investments per project, and their general investment
-    const memberGeneralInv: Record<string, number> = {}; // userDocId -> general amount
-    const memberProjectsInv: Record<string, Record<string, number>> = {}; // userDocId -> { projectId -> participating amount }
-    const projectTotalParticipating: Record<string, number> = {}; // projectId -> total participating amount
-    let totalGeneralCompanyPool = 0;
-
-    companyMembers.forEach((u) => {
-      const uAmt = Number(u.amount || 0);
-      if (u.accountType === "saving") return;
-
-      const totalSpecial = memberTotalSpecialInv[u.docId] || 0;
-      const generalAmt = Math.max(0, uAmt - totalSpecial);
-      memberGeneralInv[u.docId] = generalAmt;
-      totalGeneralCompanyPool += generalAmt;
-
-      memberProjectsInv[u.docId] = {};
-      companyProjects.forEach((p) => {
-        const specAmt = (memberSpecialInvMap[u.docId] || {})[p.id] || 0;
-        const partAmt = specAmt + generalAmt;
-        memberProjectsInv[u.docId][p.id] = partAmt;
-        projectTotalParticipating[p.id] = (projectTotalParticipating[p.id] || 0) + partAmt;
-      });
-    });
-
-    // 7. Compute project-specific shares for each business member
-    const memberProjectsShare: Record<string, Record<string, number>> = {}; // userDocId -> { projectId -> share fraction }
-
-    companyMembers.forEach((u) => {
-      memberProjectsShare[u.docId] = {};
-      if (u.accountType === "saving") {
-        companyProjects.forEach((p) => {
-          memberProjectsShare[u.docId][p.id] = 0;
-        });
-        return;
-      }
-
-      companyProjects.forEach((p) => {
-        let share = 0;
-        if (u.customShare !== undefined && u.customShare !== null) {
-          share = u.customShare / 100;
-        } else {
-          const partAmt = (memberProjectsInv[u.docId] || {})[p.id] || 0;
-          const projTotal = projectTotalParticipating[p.id] || 0;
-          share = projTotal > 0 ? partAmt / projTotal : 0;
-        }
-        memberProjectsShare[u.docId][p.id] = share;
-      });
-    });
-
-    // 8. Filter company transactions
+    // 6. Filter company transactions
     const companyTransactions = transactions.filter((t) => {
       if (currentUser.role === "admin") return true;
       const targetCompanyId = currentUser.role === "company" ? currentUser.docId : currentUser.companyId;
@@ -482,7 +534,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       return p && p.companyId === targetCompanyId;
     });
 
-    // 9. Compute project profit summary
+    // 7. Compute project profit summary
     const projSummary: Record<string, { expense: number; sale: number }> = {};
     companyProjects.forEach((p) => {
       projSummary[p.id] = { expense: 0, sale: 0 };
@@ -496,7 +548,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       else if (t.type === "sale") projSummary[t.projectId].sale += amount;
     });
 
-    // 10. Filter company installments to get installment incomes (downpayment + paid monthly steps)
+    // 8. Filter company installments to get installment incomes (downpayment + paid monthly steps)
     const companyInstallments = installments.filter((inst) => {
       if (currentUser.role === "admin") return true;
       const targetCompanyId = currentUser.role === "company" ? currentUser.docId : currentUser.companyId;
@@ -520,44 +572,152 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       }
     });
 
-    // 11. Compute each member's personal shares of expenses and incomes
-    const memberCalculations: Record<string, { expense: number; income: number; shareText: string }> = {};
+    // 9. Compute project-specific shares for each business member
+    const memberProjectsShare: Record<string, Record<string, number>> = {}; // userDocId -> { projectId -> share fraction }
 
     companyMembers.forEach((u) => {
-      if (u.accountType === "saving") {
-        memberCalculations[u.docId] = { expense: 0, income: 0, shareText: "0.0%" };
-        return;
-      }
+      memberProjectsShare[u.docId] = {};
+      
+      companyProjects.forEach((p) => {
+        let share = 0;
+        if (u.customShare !== undefined && u.customShare !== null) {
+          share = u.customShare / 100;
+        } else {
+          const partAmt = (memberSpecialInvMap[u.docId] || {})[p.id] || 0;
+          const projTotalSpecial = companyMembers.reduce((sum, m) => sum + ((memberSpecialInvMap[m.docId] || {})[p.id] || 0), 0);
+          if (projTotalSpecial > 0) {
+            share = partAmt / projTotalSpecial;
+          } else {
+            // Default to equal share among business members if no investments yet
+            const businessMembers = companyMembers.filter((m) => m.accountType !== "saving");
+            share = businessMembers.length > 0 ? (u.accountType !== "saving" ? 1 / businessMembers.length : 0) : 0;
+          }
+        }
+        memberProjectsShare[u.docId][p.id] = share;
+      });
+    });
 
-      let userTotalExpense = 0;
-      let userTotalIncome = 0;
+    // 10. For each member, calculate their three balances
+    const memberCalculations: Record<string, { 
+      expense: number; 
+      income: number; 
+      shareText: string;
+      savingsBalance: number;
+      investBalance: number;
+      incomeBalance: number;
+      totalDeposits: number;
+      specialInv: number;
+      expenseShare: number;
+      incomeShare: number;
+      totalSavingsWithdrawals: number;
+      totalIncomeWithdrawals: number;
+    }> = {};
 
+    const memberGeneralInv: Record<string, number> = {}; // userDocId -> general amount
+    const memberProjectsInv: Record<string, Record<string, number>> = {}; // userDocId -> { projectId -> participating amount }
+    const projectTotalParticipating: Record<string, number> = {}; // projectId -> total participating amount
+    let totalGeneralCompanyPool = 0;
+
+    companyMembers.forEach((u) => {
+      const uHistories = companyHistories.filter((h) => h.userDocId === u.docId);
+
+      // A. Special investments
+      const specialInv = memberTotalSpecialInv[u.docId] || 0;
+
+      // B. Shared project expenses
+      let expenseShare = 0;
       companyProjects.forEach((p) => {
         const pShare = (memberProjectsShare[u.docId] || {})[p.id] || 0;
         const pExpense = (projSummary[p.id] || { expense: 0 }).expense;
-        const pSaleIncome = (projSummary[p.id] || { sale: 0 }).sale;
-        const pInstIncome = projectInstallmentIncome[p.id] || 0;
-        const pTotalIncome = pSaleIncome + pInstIncome;
-
-        userTotalExpense += pExpense * pShare;
-        userTotalIncome += pTotalIncome * pShare;
+        expenseShare += pExpense * pShare;
       });
 
-      const uAmt = Number(u.amount || 0);
+      // C. Shared project income (Net Profit / Dividend Share)
+      let incomeShare = 0;
+      companyProjects.forEach((p) => {
+        const pShare = (memberProjectsShare[u.docId] || {})[p.id] || 0;
+        const pSaleIncome = (projSummary[p.id] || { sale: 0 }).sale;
+        const pInstIncome = projectInstallmentIncome[p.id] || 0;
+        const pExpense = (projSummary[p.id] || { expense: 0 }).expense;
+        const pProfit = Math.max(0, (pSaleIncome + pInstIncome) - pExpense);
+        incomeShare += pProfit * pShare;
+      });
+
+      // D. Subsequent deposits (type is saving or savings_arrears_paid or installment leftover where projectId is not set)
+      let subsequentDeposits = 0;
+      uHistories.forEach((h) => {
+        const amt = Number(h.amount || 0);
+        if (amt > 0 && h.type !== "savings_arrears" && (!h.projectId || h.projectId === "company")) {
+          subsequentDeposits += amt;
+        }
+      });
+
+      const initialDeposit = Number(u.investAmount || 0);
+      const totalDeposits = initialDeposit + subsequentDeposits;
+
+      // E. Total withdrawals (history amount < 0)
+      let withdrawals = 0;
+      uHistories.forEach((h) => {
+        const amt = Number(h.amount || 0);
+        if (amt < 0 || h.type === "withdraw") {
+          withdrawals += Math.abs(amt);
+        }
+      });
+
+      let totalSavingsWithdrawals = 0;
+      let totalIncomeWithdrawals = 0;
+
+      if (u.accountType === "saving") {
+        totalSavingsWithdrawals = withdrawals;
+      } else if (u.accountType === "business") {
+        totalIncomeWithdrawals = withdrawals;
+      } else {
+        totalSavingsWithdrawals = withdrawals;
+      }
+
+      // F. Final Balances
+      const investBalance = specialInv + expenseShare;
+      const incomeBalance = Math.max(0, incomeShare - totalIncomeWithdrawals);
+      const savingsBalance = Math.max(0, totalDeposits - specialInv - expenseShare - totalSavingsWithdrawals);
+
+      memberGeneralInv[u.docId] = savingsBalance;
+      totalGeneralCompanyPool += savingsBalance;
+
+      // Calculate memberProjectsInv and projectTotalParticipating
+      memberProjectsInv[u.docId] = {};
+      companyProjects.forEach((p) => {
+        const specAmt = (memberSpecialInvMap[u.docId] || {})[p.id] || 0;
+        const pShare = (memberProjectsShare[u.docId] || {})[p.id] || 0;
+        const pExpense = (projSummary[p.id] || { expense: 0 }).expense;
+        const partAmt = specAmt + (pExpense * pShare);
+        
+        memberProjectsInv[u.docId][p.id] = partAmt;
+        projectTotalParticipating[p.id] = (projectTotalParticipating[p.id] || 0) + partAmt;
+      });
+
       const businessMembers = companyMembers.filter((m) => m.accountType !== "saving");
-      const businessTotalDeposit = businessMembers.reduce((sum, m) => sum + Number(m.amount || 0), 0);
+      const businessTotalSavings = businessMembers.reduce((sum, m) => sum + (m.savingsBalance || 0), 0);
       
       let displayShare = 0;
       if (u.customShare !== undefined && u.customShare !== null) {
         displayShare = u.customShare / 100;
       } else {
-        displayShare = businessTotalDeposit > 0 ? uAmt / businessTotalDeposit : 0;
+        displayShare = businessTotalSavings > 0 ? savingsBalance / businessTotalSavings : 0;
       }
 
       memberCalculations[u.docId] = {
-        expense: parseFloat(userTotalExpense.toFixed(2)),
-        income: parseFloat(userTotalIncome.toFixed(2)),
+        expense: parseFloat(expenseShare.toFixed(2)),
+        income: parseFloat(incomeShare.toFixed(2)),
         shareText: (displayShare * 100).toFixed(1) + "%",
+        savingsBalance: parseFloat(savingsBalance.toFixed(2)),
+        investBalance: parseFloat(investBalance.toFixed(2)),
+        incomeBalance: parseFloat(incomeBalance.toFixed(2)),
+        totalDeposits,
+        specialInv,
+        expenseShare,
+        incomeShare,
+        totalSavingsWithdrawals,
+        totalIncomeWithdrawals,
       };
     });
 
@@ -613,28 +773,35 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
     const totalBalance = globalTotalDeposit + totalIncome - totalExpense;
 
     const totalDue = companyInstallments.reduce((sum, inst) => {
-      const paid = (inst.schedule || [])
-        .filter((s) => s.status === "paid")
-        .reduce((stepSum, s) => stepSum + Number(s.amount || 0), 0);
-      return sum + Math.max(0, Number(inst.totalAmount || 0) - Number(inst.downPayment || 0) - paid);
+      const instDue = (inst.schedule || []).reduce(
+        (stepSum, s) => stepSum + Math.max(0, Number(s.amount || 0) - Number(s.paidAmount || 0)),
+        0
+      );
+      return sum + instDue;
     }, 0);
 
     // 2. Adjust stats if logged-in user is a member with "only own data" view
     if (currentUser.role === "member" && !currentUser.canSeeAllData) {
-      const calc = memberCalculations[currentUser.docId] || { expense: 0, income: 0 };
-      const myUser = users.find((u) => u.docId === currentUser.docId) || currentUser;
-      const myDeposit = Number(myUser.amount || 0);
-      const myBalance = myDeposit - calc.expense;
+      const calc = memberCalculations[currentUser.docId] || { 
+        expense: 0, 
+        income: 0, 
+        savingsBalance: 0, 
+        investBalance: 0, 
+        incomeBalance: 0 
+      };
+      const myDeposit = Number(calc.savingsBalance);
+      const myBalance = Number(calc.savingsBalance + calc.incomeBalance);
 
       // Find member's own installments and their due amount
       const myInstallments = companyInstallments.filter((inst) => 
         inst.customerName?.trim().toLowerCase() === currentUser.name?.trim().toLowerCase()
       );
       const myDue = myInstallments.reduce((sum, inst) => {
-        const paid = (inst.schedule || [])
-          .filter((s) => s.status === "paid")
-          .reduce((stepSum, s) => stepSum + Number(s.amount || 0), 0);
-        return sum + Math.max(0, Number(inst.totalAmount || 0) - Number(inst.downPayment || 0) - paid);
+        const instDue = (inst.schedule || []).reduce(
+          (stepSum, s) => stepSum + Math.max(0, Number(s.amount || 0) - Number(s.paidAmount || 0)),
+          0
+        );
+        return sum + instDue;
       }, 0);
 
       return {
@@ -1159,16 +1326,19 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
         // Generate schedule
         const schedule: InstallmentStep[] = [];
         const baseDate = new Date(newInstStartDate);
+        let remainingToDistribute = remaining;
         for (let i = 1; i <= newInstMonths; i++) {
           const dueDate = new Date(baseDate);
           dueDate.setMonth(dueDate.getMonth() + i);
+          const stepAmount = Math.round(remainingToDistribute / (newInstMonths - i + 1));
           schedule.push({
             month: i,
             dueDate: dueDate.toISOString().split("T")[0],
-            amount: monthlyPay,
+            amount: stepAmount,
             status: "unpaid",
             paidAmount: 0,
           });
+          remainingToDistribute -= stepAmount;
         }
 
         const payload: any = {
@@ -1339,16 +1509,19 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       // Generate new schedule step lists
       const schedule: InstallmentStep[] = [];
       const baseDate = new Date(startDate);
+      let remainingToDistribute = remaining;
       for (let i = 1; i <= months; i++) {
         const dueDate = new Date(baseDate);
         dueDate.setMonth(dueDate.getMonth() + i);
+        const stepAmount = Math.round(remainingToDistribute / (months - i + 1));
         schedule.push({
           month: i,
           dueDate: dueDate.toISOString().split("T")[0],
-          amount: monthlyPay,
+          amount: stepAmount,
           status: "unpaid",
           paidAmount: 0,
         });
+        remainingToDistribute -= stepAmount;
       }
 
       await updateDoc(doc(db, "installments", id), {
@@ -1888,7 +2061,9 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                   })
                   .map((p) => {
                     const s = projSummary[p.id] || { expense: 0, sale: 0 };
-                    const profit = s.sale - s.expense;
+                    const instIncome = projectInstallmentIncome[p.id] || 0;
+                    const totalProjectSale = s.sale + instIncome;
+                    const profit = totalProjectSale - s.expense;
                     const totalInv = projectTotalParticipating[p.id] || 0;
                     const budget = p.budget || 0;
                     const diff = totalInv - budget;
@@ -1928,7 +2103,7 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                           )}
                         </td>
                         <td className="p-3 text-right text-rose-500 font-bold">৳{formatNum(s.expense)}</td>
-                        <td className="p-3 text-right text-emerald-600 font-bold">৳{formatNum(s.sale)}</td>
+                        <td className="p-3 text-right text-emerald-600 font-bold">৳{formatNum(totalProjectSale)}</td>
                         <td className={`p-3 text-right font-bold ${profit >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
                           ৳{formatNum(profit)}
                         </td>
@@ -1974,9 +2149,8 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                   })
                   .map((item) => {
                   const paidTotal = (item.schedule || [])
-                    .filter((s) => s.status === "paid")
-                    .reduce((sum, s) => sum + Number(s.amount || 0), 0);
-                  let due = Number(item.totalAmount || 0) - Number(item.downPayment || 0) - paidTotal;
+                    .reduce((sum, s) => sum + Number(s.paidAmount || 0), 0);
+                  let due = (item.schedule || []).reduce((sum, s) => sum + Math.max(0, Number(s.amount || 0) - Number(s.paidAmount || 0)), 0);
                   if (due < 0) due = 0;
                   const isClosed = due <= 0;
 
@@ -3533,9 +3707,18 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
                   </div>
                   <div className="flex justify-between border-t border-indigo-100/50 pt-1.5 font-bold">
                     <span className="text-indigo-900">আমার লভ্যাংশ (লাভ/ক্ষতি থেকে)ঃ</span>
-                    <span className={(((memberProjectsShare[currentUser.docId] || {})[currentProject.id] || 0) * ((projSummary[currentProject.id] || { sale: 0, expense: 0 }).sale - (projSummary[currentProject.id] || { sale: 0, expense: 0 }).expense) >= 0 ? "text-emerald-600 font-extrabold" : "text-rose-600 font-extrabold")}>
-                      ৳{formatNum(((memberProjectsShare[currentUser.docId] || {})[currentProject.id] || 0) * ((projSummary[currentProject.id] || { sale: 0, expense: 0 }).sale - (projSummary[currentProject.id] || { sale: 0, expense: 0 }).expense))}
-                    </span>
+                    {(() => {
+                      const projSale = (projSummary[currentProject.id] || { sale: 0 }).sale;
+                      const projInst = projectInstallmentIncome[currentProject.id] || 0;
+                      const projExp = (projSummary[currentProject.id] || { expense: 0 }).expense;
+                      const projProfit = (projSale + projInst) - projExp;
+                      const myProjProfit = ((memberProjectsShare[currentUser.docId] || {})[currentProject.id] || 0) * projProfit;
+                      return (
+                        <span className={myProjProfit >= 0 ? "text-emerald-600 font-extrabold" : "text-rose-600 font-extrabold"}>
+                          ৳{formatNum(myProjProfit)}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
               )}

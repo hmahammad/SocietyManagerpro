@@ -537,8 +537,19 @@ export default function MemberListView({ currentUser, onNavigate }: MemberListVi
 
                         {/* Savings & Type */}
                         <td className="px-4 py-3">
-                          <div>
-                            <span className="font-bold text-emerald-700 block">৳{formatBDT(m.amount || 0)}</span>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-slate-400 font-extrabold uppercase">সেভিংস:</span>
+                              <span className="font-extrabold text-emerald-700 text-xs">৳{formatBDT(m.savingsBalance !== undefined ? m.savingsBalance : (m.amount || 0))}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-slate-400 font-extrabold uppercase">ইনভেস্ট:</span>
+                              <span className="font-extrabold text-blue-700 text-xs">৳{formatBDT(m.investBalance || 0)}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-slate-400 font-extrabold uppercase">ইনকাম:</span>
+                              <span className="font-extrabold text-amber-700 text-xs">৳{formatBDT(m.incomeBalance || 0)}</span>
+                            </div>
                             <div className="flex gap-1 mt-1 flex-wrap">
                               {m.accountType && (
                                 <span className="text-[8px] bg-blue-50 text-blue-600 font-extrabold px-1.5 py-0.2 rounded">

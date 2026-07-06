@@ -709,10 +709,29 @@ export default function TransactionsView({ currentUser, onNavigate }: Transactio
 
     try {
       if (trxFlow === "OUT") {
-        // CASH OUT (Withdraw savings)
-        const currentSavings = Number(member.amount || 0);
-        if (currentSavings < amountNum) {
-          throw new Error(`উত্তোলনের জন্য পর্যাপ্ত সেভিংস ব্যালেন্স নেই। আপনার বর্তমান ব্যালেন্স: ৳${formatNum(currentSavings)}`);
+        const isCompanyOrAdmin = currentUser.role === "company" || currentUser.role === "admin";
+        const savingsBal = member.savingsBalance !== undefined ? member.savingsBalance : Number(member.amount || 0);
+        const incomeBal = member.incomeBalance || 0;
+
+        if (isCompanyOrAdmin) {
+          const totalAvailable = savingsBal + incomeBal;
+          if (totalAvailable < amountNum) {
+            throw new Error(`উত্তোলনের জন্য পর্যাপ্ত ব্যালেন্স নেই। মোট উপলব্ধ ব্যালেন্স: ৳${formatNum(totalAvailable)} (সেভিংস: ৳${formatNum(savingsBal)}, ইনকাম: ৳${formatNum(incomeBal)})`);
+          }
+        } else {
+          if (member.accountType === "saving") {
+            if (savingsBal < amountNum) {
+              throw new Error(`উত্তোলনের জন্য পর্যাপ্ত সেভিংস ব্যালেন্স নেই। আপনার বর্তমান সেভিংস ব্যালেন্স: ৳${formatNum(savingsBal)}`);
+            }
+          } else if (member.accountType === "business") {
+            if (incomeBal < amountNum) {
+              throw new Error(`উত্তোলনের জন্য পর্যাপ্ত ইনকাম ব্যালেন্স নেই। আপনার বর্তমান ইনকাম ব্যালেন্স: ৳${formatNum(incomeBal)}`);
+            }
+          } else {
+            if (savingsBal < amountNum) {
+              throw new Error(`উত্তোলনের জন্য পর্যাপ্ত সেভিংস ব্যালেন্স নেই। আপনার বর্তমান সেভিংস ব্যালেন্স: ৳${formatNum(savingsBal)}`);
+            }
+          }
         }
       }
 
@@ -853,10 +872,21 @@ export default function TransactionsView({ currentUser, onNavigate }: Transactio
 
     try {
       if (req.flow === "OUT") {
-        // CASH OUT (Withdraw savings)
-        const currentSavings = Number(member.amount || 0);
-        if (currentSavings < req.amount) {
-          throw new Error(`উত্তোলনের জন্য পর্যাপ্ত সেভিংস ব্যালেন্স নেই। বর্তমান ব্যালেন্স: ৳${formatNum(currentSavings)}`);
+        const savingsBal = member.savingsBalance !== undefined ? member.savingsBalance : Number(member.amount || 0);
+        const incomeBal = member.incomeBalance || 0;
+
+        if (member.accountType === "saving") {
+          if (savingsBal < req.amount) {
+            throw new Error(`উত্তোলনের জন্য পর্যাপ্ত সেভিংস ব্যালেন্স নেই। বর্তমান সেভিংস ব্যালেন্স: ৳${formatNum(savingsBal)}`);
+          }
+        } else if (member.accountType === "business") {
+          if (incomeBal < req.amount) {
+            throw new Error(`উত্তোলনের জন্য পর্যাপ্ত ইনকাম ব্যালেন্স নেই। বর্তমান ইনকাম ব্যালেন্স: ৳${formatNum(incomeBal)}`);
+          }
+        } else {
+          if (savingsBal < req.amount) {
+            throw new Error(`উত্তোলনের জন্য পর্যাপ্ত সেভিংস ব্যালেন্স নেই। বর্তমান সেভিংস ব্যালেন্স: ৳${formatNum(savingsBal)}`);
+          }
         }
 
         // Add history document
@@ -1830,7 +1860,7 @@ export default function TransactionsView({ currentUser, onNavigate }: Transactio
                         <option value="">-- সদস্য সিলেক্ট করুন --</option>
                         {activeCompanyMembers.map((member) => (
                           <option key={member.docId} value={member.docId}>
-                            {member.name} (ব্যালেন্স: ৳{formatNum(member.amount || 0)})
+                            {member.name} (সেভিংস: ৳{formatNum(member.savingsBalance !== undefined ? member.savingsBalance : (member.amount || 0))} | ইনকাম: ৳{formatNum(member.incomeBalance || 0)})
                           </option>
                         ))}
                       </select>
@@ -1840,7 +1870,7 @@ export default function TransactionsView({ currentUser, onNavigate }: Transactio
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">সদস্য (আপনি)</label>
                       <div className="w-full text-xs font-black border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-100 text-slate-500 flex items-center gap-1.5">
                         <UserIcon className="w-3.5 h-3.5" />
-                        {currentUser.name} (৳{formatNum(currentUser.amount || 0)})
+                        {currentUser.name} (সেভিংস: ৳{formatNum(currentUser.savingsBalance !== undefined ? currentUser.savingsBalance : (currentUser.amount || 0))} | ইনকাম: ৳{formatNum(currentUser.incomeBalance || 0)})
                       </div>
                     </div>
                   )}
@@ -2549,7 +2579,7 @@ export default function TransactionsView({ currentUser, onNavigate }: Transactio
                       <option value="">-- সদস্য সিলেক্ট করুন --</option>
                       {activeCompanyMembers.map((member) => (
                         <option key={member.docId} value={member.docId}>
-                          {member.name} (ব্যালেন্স: ৳{formatNum(member.amount || 0)})
+                          {member.name} (সেভিংস: ৳{formatNum(member.savingsBalance !== undefined ? member.savingsBalance : (member.amount || 0))} | ইনকাম: ৳{formatNum(member.incomeBalance || 0)})
                         </option>
                       ))}
                     </select>
@@ -2559,7 +2589,7 @@ export default function TransactionsView({ currentUser, onNavigate }: Transactio
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">সদস্য (আপনি)</label>
                     <div className="w-full text-xs font-black border border-slate-200 rounded-xl px-3 py-2.5 bg-slate-100 text-slate-500 flex items-center gap-1.5">
                       <UserIcon className="w-3.5 h-3.5" />
-                      {currentUser.name} (৳{formatNum(currentUser.amount || 0)})
+                      {currentUser.name} (সেভিংস: ৳{formatNum(currentUser.savingsBalance !== undefined ? currentUser.savingsBalance : (currentUser.amount || 0))} | ইনকাম: ৳{formatNum(currentUser.incomeBalance || 0)})
                     </div>
                   </div>
                 )}

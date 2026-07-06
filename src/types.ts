@@ -22,6 +22,9 @@ export interface User {
   idFrontUrl?: string;
   idBackUrl?: string;
   amount?: number;
+  savingsBalance?: number;
+  investBalance?: number;
+  incomeBalance?: number;
   customShare?: number;
   companyId?: string;
   birthDate?: string;
@@ -125,7 +128,7 @@ export interface Notification {
   senderId: string;
   senderName: string;
   senderRole: "admin" | "company";
-  targetType: "all_companies" | "all_members" | "company_members";
+  targetType: "all_companies" | "all_members" | "company_members" | "admin";
   targetCompanyId?: string;
   createdAt: string;
   readBy?: string[];

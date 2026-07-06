@@ -9,6 +9,7 @@ import MemberListView from "./components/MemberListView";
 import MemberAddView from "./components/MemberAddView";
 import ProfileView from "./components/ProfileView";
 import GlobalHeader from "./components/GlobalHeader";
+import GlobalSlider from "./components/GlobalSlider";
 import ArrearsView from "./components/ArrearsView";
 import NotificationsView from "./components/NotificationsView";
 import TransactionsView from "./components/TransactionsView";
@@ -125,6 +126,7 @@ export default function App() {
         language={language}
         setLanguage={setLanguage}
       />
+      <GlobalSlider currentUser={currentUser} language={language} />
       <AnimatePresence mode="wait">
         <motion.div
           key={currentView + (navigationParams?.id || "")}
@@ -134,15 +136,15 @@ export default function App() {
           transition={{ duration: 0.2, ease: "easeInOut" }}
         >
           {currentView === "dashboard" && (
-            <DashboardView currentUser={currentUser} onNavigate={handleNavigate} language={language} />
+            <DashboardView currentUser={currentUser} onNavigate={handleNavigate} />
           )}
 
           {currentView === "member-list" && (
-            <MemberListView currentUser={currentUser} onNavigate={handleNavigate} language={language} />
+            <MemberListView currentUser={currentUser} onNavigate={handleNavigate} />
           )}
 
           {currentView === "member-add" && (
-            <MemberAddView currentUser={currentUser} onNavigate={handleNavigate} language={language} />
+            <MemberAddView currentUser={currentUser} onNavigate={handleNavigate} />
           )}
 
           {currentView === "profile" && (
@@ -150,7 +152,6 @@ export default function App() {
               currentUser={currentUser}
               targetId={navigationParams?.id}
               onNavigate={handleNavigate}
-              language={language}
             />
           )}
 
@@ -158,7 +159,6 @@ export default function App() {
             <ArrearsView
               currentUser={currentUser}
               onNavigate={handleNavigate}
-              language={language}
             />
           )}
 
@@ -166,7 +166,6 @@ export default function App() {
             <NotificationsView
               currentUser={currentUser}
               onNavigate={handleNavigate}
-              language={language}
             />
           )}
 
@@ -174,7 +173,6 @@ export default function App() {
             <TransactionsView
               currentUser={currentUser}
               onNavigate={handleNavigate}
-              language={language}
             />
           )}
         </motion.div>

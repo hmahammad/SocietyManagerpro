@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { doc, setDoc, runTransaction, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, setDoc, runTransaction, collection, query, where, getDocs, addDoc } from "firebase/firestore";
 import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { db, secondaryAuth } from "../firebase";
 import { User } from "../types";
@@ -140,6 +140,13 @@ export default function MemberAddView({ currentUser, onNavigate }: MemberAddView
     if (!investType) errs.investType = "কিস্তির ধরন নির্বাচন করুন";
     if (!investDate) errs.investDate = "কিস্তি জমার তারিখ নির্বাচন করুন";
 
+    if (nidNumber) {
+      const cleanNid = nidNumber.replace(/\D/g, "");
+      if (cleanNid.length < 10 || cleanNid.length > 17) {
+        errs.nidNumber = "পরিচয়পত্র নম্বরটি ১০ থেকে ১৭ ডিজিটের হতে হবে";
+      }
+    }
+
     if (password.length < 6) errs.password = "পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে";
     if (password !== confirmPassword) errs.confirmPassword = "পাসওয়ার্ড দুটি মেলেনি";
 
@@ -192,8 +199,27 @@ export default function MemberAddView({ currentUser, onNavigate }: MemberAddView
         companyId: currentUser.docId,
         status: status,
         amount: investAmount, // starting savings amount matches the first investment amount
+        savingsBalance: investAmount,
+        incomeBalance: 0,
         createdAt: Date.now(),
       });
+
+      // Write starting history if investAmount > 0
+      if (investAmount > 0) {
+        const historyCol = collection(db, "users", memberId, "history");
+        await addDoc(historyCol, {
+          amount: investAmount,
+          date: new Date().toISOString().split('T')[0],
+          memo: "প্রারম্ভিক সঞ্চয় ডিপোজিট (মেম্বার যোগদান)",
+          InvestType: investType,
+          accountType: accountType,
+          type: "saving",
+          flow: "IN",
+          paymentMethod: "cash",
+          createdAt: new Date().toISOString(),
+          projectName: "কোম্পানি (সাধারণ)",
+        });
+      }
 
       showToast("🎉 মেম্বার সফলভাবে যোগ হয়েছে!");
       setTimeout(() => onNavigate("member-list"), 1500);
@@ -497,10 +523,13 @@ export default function MemberAddView({ currentUser, onNavigate }: MemberAddView
               <input
                 type="text"
                 value={nidNumber}
-                onChange={(e) => setNidNumber(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none text-sm font-medium transition focus:border-blue-400"
-                placeholder="NID / জন্ম নিবন্ধন নম্বর"
+                onChange={(e) => setNidNumber(e.target.value.replace(/\D/g, "").slice(0, 17))}
+                className={`w-full px-4 py-2.5 rounded-xl border outline-none text-sm font-medium transition ${
+                  errors.nidNumber ? "border-rose-400 ring-1 ring-rose-400" : "border-slate-200 focus:border-blue-400"
+                }`}
+                placeholder="NID / জন্ম নিবন্ধন নম্বর (১০-১৭ ডিজিট)"
               />
+              {errors.nidNumber && <p className="text-rose-500 text-[10px] mt-1 font-semibold">{errors.nidNumber}</p>}
             </div>
           </div>
         </div>
