@@ -12,6 +12,7 @@ export const translations = {
     memberAdd: "সদস্য যোগ",
     memberAddFull: "সদস্য যোগ করুন",
     profile: "প্রোফাইল",
+    entry: "এন্ট্রি",
     logout: "লগ আউট",
     logoutConfirmTitle: "লগআউট নিশ্চিতকরণ",
     logoutConfirmMsg: "আপনি কি নিশ্চিতভাবে লগআউট করতে চান?",
@@ -255,6 +256,9 @@ export const translations = {
     amount: "পরিমাণ",
     approve: "অনুমোদন",
     reject: "প্রত্যাখ্যান",
+    preferences: "পছন্দসমূহ ও থিম",
+    dayNightMode: "ডে ও নাইট মোড",
+    changeLanguage: "ভাষা পরিবর্তন করুন",
   },
   en: {
     // Common / Global Header
@@ -267,6 +271,7 @@ export const translations = {
     memberAdd: "Add Member",
     memberAddFull: "Add New Member",
     profile: "Profile",
+    entry: "Entry",
     logout: "Log Out",
     logoutConfirmTitle: "Logout Confirmation",
     logoutConfirmMsg: "Are you sure you want to log out?",
@@ -510,5 +515,8 @@ export const translations = {
     amount: "Amount",
     approve: "Approve",
     reject: "Reject",
+    preferences: "Preferences & Theme",
+    dayNightMode: "Day & Night Mode",
+    changeLanguage: "Change Language",
   }
 };

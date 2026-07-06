@@ -32,17 +32,28 @@ import {
   ShieldCheck,
   AlertTriangle,
   Upload,
+  Award,
+  Zap,
+  CheckCircle,
+  Clock,
+  Sparkles,
 } from "lucide-react";
 
 const writtenArrearsKeysGlobal = new Set<string>();
+
+const toBanglaDigitsLocal = (num: number | string) => {
+  const banglaDigits = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
+  return num.toString().replace(/\d/g, (d) => banglaDigits[parseInt(d)]);
+};
 
 interface ProfileViewProps {
   currentUser: User;
   targetId?: string | null;
   onNavigate: (view: string, params?: any) => void;
+  totalEntries?: number;
 }
 
-export default function ProfileView({ currentUser, targetId, onNavigate }: ProfileViewProps) {
+export default function ProfileView({ currentUser, targetId, onNavigate, totalEntries = 0 }: ProfileViewProps) {
   const [loading, setLoading] = useState(true);
   const [targetUser, setTargetUser] = useState<User | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -83,6 +94,14 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [saving, setSaving] = useState(false);
   const [savingsTab, setSavingsTab] = useState<"schedule" | "history">("schedule");
+
+  // Subscription / Billing States
+  const [showBillingForm, setShowBillingForm] = useState(false);
+  const [billingPlan, setBillingPlan] = useState<"monthly" | "yearly">("monthly");
+  const [billingGateway, setBillingGateway] = useState<"bkash" | "nagad">("bkash");
+  const [billingPhone, setBillingPhone] = useState("");
+  const [billingTxId, setBillingTxId] = useState("");
+  const [billingSubmitting, setBillingSubmitting] = useState(false);
 
   const isOwnProfile = !targetId || targetId === currentUser.docId;
   const isAdminOrCompany = currentUser.role === "admin" || currentUser.role === "company";
@@ -527,6 +546,124 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
       showToast("❌ রিকোয়েস্ট পাঠাতে ব্যর্থ হয়েছে!", "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSubmitUpgradeRequest = async () => {
+    if (!billingPhone || billingPhone.trim().length < 11) {
+      showToast("❌ সঠিক বিকাশ/নগদ নম্বর লিখুন", "error");
+      return;
+    }
+    if (!billingTxId || billingTxId.trim().length < 8) {
+      showToast("❌ সঠিক ট্রানজেকশন আইডি (TxID) লিখুন", "error");
+      return;
+    }
+
+    setBillingSubmitting(true);
+    try {
+      const activeId = targetId || currentUser.docId;
+      const upgradeObj = {
+        planRequested: billingPlan,
+        planRequestTxId: billingTxId.trim(),
+        planRequestMobile: billingPhone.trim(),
+        planRequestAmount: billingPlan === "monthly" ? 500 : 5000,
+        planRequestAt: Date.now(),
+      };
+
+      await updateDoc(doc(db, "users", activeId), upgradeObj);
+
+      // Create admin notification
+      await addDoc(collection(db, "notifications"), {
+        title: `${companyName || name} সাবস্ক্রিপশন রিকোয়েস্ট পাঠিয়েছে`,
+        body: `${companyName || name} তাদের সাবস্ক্রিপশন প্ল্যান ${billingPlan === "monthly" ? "মাসিক (৳৫০০)" : "বাৎসরিক (৳৫০০০)"} এ আপগ্রেড করার জন্য আবেদন করেছে। পেমেন্ট নম্বর: ${billingPhone}, TrxID: ${billingTxId}`,
+        senderId: activeId,
+        senderName: companyName || name,
+        senderRole: "company",
+        targetType: "admin",
+        createdAt: new Date().toISOString(),
+        readBy: [],
+      });
+
+      showToast("✅ সাবস্ক্রিপশন রিকোয়েস্ট সফলভাবে পাঠানো হয়েছে!");
+      setShowBillingForm(false);
+      setBillingPhone("");
+      setBillingTxId("");
+      
+      // Force trigger state reload if targetUser is present
+      if (targetUser) {
+        setTargetUser({
+          ...targetUser,
+          ...upgradeObj,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("❌ রিকোয়েস্ট পাঠাতে ব্যর্থ হয়েছে!", "error");
+    } finally {
+      setBillingSubmitting(false);
+    }
+  };
+
+  const handleInstantSimulatorUpgrade = async (planType: "monthly" | "yearly") => {
+    setBillingSubmitting(true);
+    try {
+      const activeId = targetId || currentUser.docId;
+      const days = planType === "monthly" ? 30 : 365;
+      const expireTime = Date.now() + days * 24 * 60 * 60 * 1000;
+
+      const premiumObj = {
+        plan: planType,
+        planActiveUntil: expireTime,
+        planRequested: null,
+        planRequestTxId: "",
+        planRequestMobile: "",
+        planRequestAmount: 0,
+        planRequestAt: 0,
+      };
+
+      await updateDoc(doc(db, "users", activeId), premiumObj);
+      showToast(`⚡ সিমুলেটর: সফলভাবে ${planType === "monthly" ? "মাসিক" : "বাৎসরিক"} প্রিমিয়াম একটিভ হয়েছে!`);
+      
+      if (targetUser) {
+        setTargetUser({
+          ...targetUser,
+          ...premiumObj,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("❌ সিমুলেশন অ্যাক্টিভেশন ব্যর্থ হয়েছে", "error");
+    } finally {
+      setBillingSubmitting(false);
+    }
+  };
+
+  const handleCancelUpgrade = async () => {
+    setBillingSubmitting(true);
+    try {
+      const activeId = targetId || currentUser.docId;
+      const cancelObj = {
+        planRequested: null,
+        planRequestTxId: "",
+        planRequestMobile: "",
+        planRequestAmount: 0,
+        planRequestAt: 0,
+      };
+
+      await updateDoc(doc(db, "users", activeId), cancelObj);
+      showToast("✅ পেন্ডিং রিকোয়েস্ট বাতিল করা হয়েছে");
+      
+      if (targetUser) {
+        setTargetUser({
+          ...targetUser,
+          ...cancelObj,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("❌ রিকোয়েস্ট বাতিল করা যায়নি", "error");
+    } finally {
+      setBillingSubmitting(false);
     }
   };
 
@@ -1037,6 +1174,286 @@ export default function ProfileView({ currentUser, targetId, onNavigate }: Profi
                 মেম্বার ড্যাশবোর্ডে ও সদস্য তালিকায় অন্য সদস্যদের ডাটা দেখতে পারবে কিনা তা এখান থেকে নির্ধারণ করা যাবে।
               </p>
             </div>
+          </div>
+        )}
+
+        {/* Subscription / Billing Section (Only for Company viewing own profile) */}
+        {role === "company" && isOwnProfile && (
+          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4 mb-4 relative overflow-hidden">
+            {/* Top background glow */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none"></div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-wide flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-indigo-500" />
+                💎 সাবস্ক্রিপশন প্ল্যান ও বিলিং
+              </span>
+              <span className={`text-[9px] px-2.5 py-0.5 rounded-full font-bold ${
+                targetUser?.plan === "monthly" || targetUser?.plan === "yearly"
+                  ? "bg-indigo-100 text-indigo-700 border border-indigo-200"
+                  : "bg-slate-100 text-slate-600 border border-slate-200"
+              }`}>
+                {targetUser?.plan === "monthly" 
+                  ? "মাসিক প্রিমিয়াম" 
+                  : targetUser?.plan === "yearly" 
+                  ? "বাৎসরিক প্রিমিয়াম" 
+                  : "ফ্রি প্ল্যান"}
+              </span>
+            </div>
+
+            {/* If Premium Active */}
+            {(targetUser?.plan === "monthly" || targetUser?.plan === "yearly") && (
+              <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-2xl space-y-2">
+                <div className="flex items-start gap-2.5">
+                  <div className="bg-indigo-500 p-1.5 rounded-xl text-white shrink-0 mt-0.5">
+                    <Award className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-indigo-900 leading-tight">
+                      প্রিমিয়াম প্ল্যান সক্রিয় রয়েছে!
+                    </h4>
+                    <p className="text-[10px] text-indigo-700/80 font-bold mt-0.5">
+                      আপনার সিস্টেমে আনলিমিটেড মেম্বার এবং ট্রানজেকশন এন্ট্রি সক্রিয় আছে।
+                    </p>
+                  </div>
+                </div>
+
+                {targetUser?.planActiveUntil && (
+                  <div className="pt-2 border-t border-indigo-100 flex items-center justify-between text-[9px] font-semibold text-indigo-600">
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5" />
+                      মেয়াদ শেষ হবে:
+                    </span>
+                    <span className="font-mono">
+                      {new Date(targetUser.planActiveUntil).toLocaleDateString("bn-BD", {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      })}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* If Free Plan */}
+            {(!targetUser?.plan || targetUser?.plan === "free") && (
+              <div className="space-y-3">
+                <div className="bg-slate-50 border border-slate-150 p-4 rounded-2xl space-y-3">
+                  <div className="flex justify-between items-center text-[11px] font-bold text-slate-700">
+                    <span>📊 ফ্রি প্ল্যান ব্যবহারের প্রগ্রেস</span>
+                    <span className="font-mono text-xs">
+                      {toBanglaDigitsLocal(totalEntries)} / ৫০ টি এন্ট্রি
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        totalEntries >= 45 
+                          ? "bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]" 
+                          : totalEntries >= 35 
+                          ? "bg-amber-500" 
+                          : "bg-indigo-600"
+                      }`}
+                      style={{ width: `${Math.min(100, (totalEntries / 50) * 100)}%` }}
+                    />
+                  </div>
+
+                  {totalEntries >= 50 ? (
+                    <p className="text-[10px] text-rose-600 font-bold leading-normal flex items-start gap-1">
+                      <span className="shrink-0">⚠️</span>
+                      আপনার ফ্রি প্ল্যানের ৫০ টি এন্ট্রি সীমা পূর্ণ হয়েছে! নতুন মেম্বার বা ট্রানজেকশন যোগ করতে প্ল্যান আপগ্রেড করুন।
+                    </p>
+                  ) : totalEntries >= 40 ? (
+                    <p className="text-[10px] text-amber-600 font-bold leading-normal flex items-start gap-1">
+                      <span className="shrink-0">⚠️</span>
+                      আপনি সীমার কাছাকাছি আছেন। দ্রুত মেম্বার বা ট্রানজেকশন যোগ করতে প্রিমিয়াম প্ল্যানে আপগ্রেড করুন।
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 font-medium leading-normal">
+                      ফ্রি প্ল্যানে সর্বোচ্চ ৫০ টি ডাটা এন্ট্রি (মেম্বার, কিস্তি, ডিপোজিট, ট্রানজেকশন) করতে পারবেন।
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Pending Activation Request */}
+            {targetUser?.planRequested && (
+              <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl space-y-2">
+                <div className="flex items-start gap-2 text-amber-800">
+                  <Clock className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                  <div>
+                    <h4 className="text-xs font-bold uppercase leading-tight text-amber-900">
+                      আপগ্রেড রিকোয়েস্ট পেন্ডিং
+                    </h4>
+                    <p className="text-[10px] text-amber-700 leading-normal mt-0.5">
+                      আপনি <b>{targetUser.planRequested === "monthly" ? "মাসিক" : "বাৎসরিক"}</b> প্ল্যানটির জন্য রিকোয়েস্ট করেছেন। অ্যাডমিন খুব শীঘ্রই এটি ভেরিফাই করে সক্রিয় করবেন।
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-amber-200/50 flex flex-wrap gap-x-4 gap-y-1 text-[9px] text-amber-700 font-semibold font-mono">
+                  <span>পেমেন্ট নং: {targetUser.planRequestMobile}</span>
+                  <span>TxID: {targetUser.planRequestTxId}</span>
+                </div>
+
+                <button
+                  disabled={billingSubmitting}
+                  onClick={handleCancelUpgrade}
+                  className="w-full bg-amber-200/60 hover:bg-amber-200 hover:text-amber-900 border border-amber-300 text-amber-800 py-1.5 rounded-xl text-[10px] font-bold transition active:scale-98 cursor-pointer"
+                >
+                  {billingSubmitting ? "অনুরোধ বাতিল হচ্ছে..." : "রিকোয়েস্ট বাতিল করুন"}
+                </button>
+              </div>
+            )}
+
+            {/* Upgrade Plan Buttons & Accordion */}
+            {!targetUser?.planRequested && (
+              <div className="space-y-3 pt-1">
+                {!showBillingForm ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => {
+                        setBillingPlan("monthly");
+                        setShowBillingForm(true);
+                      }}
+                      className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-3 py-3 rounded-2xl text-xs font-bold text-center shadow-lg shadow-indigo-500/10 hover:shadow-indigo-500/25 active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-center gap-1"
+                    >
+                      <Zap className="w-4 h-4 text-amber-300 fill-amber-300 animate-pulse" />
+                      <span>মাসিক প্ল্যান</span>
+                      <span className="text-[9px] opacity-90 font-mono font-black">৳৫০০ / মাস</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setBillingPlan("yearly");
+                        setShowBillingForm(true);
+                      }}
+                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-3 py-3 rounded-2xl text-xs font-bold text-center shadow-lg shadow-pink-500/10 hover:shadow-pink-500/25 active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-center gap-1 relative overflow-hidden"
+                    >
+                      {/* Ribbon / Badge */}
+                      <div className="absolute top-0 right-0 bg-yellow-400 text-yellow-950 font-black text-[7px] px-2 py-0.5 rounded-bl-lg transform uppercase tracking-widest scale-95 origin-top-right">
+                        ২ মাস ফ্রি
+                      </div>
+                      <Sparkles className="w-4 h-4 text-yellow-300" />
+                      <span>বাৎসরিক প্ল্যান</span>
+                      <span className="text-[9px] opacity-90 font-mono font-black">৳৫০০০ / বছর</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 border border-indigo-100 p-4 rounded-2xl space-y-3.5 relative">
+                    <button
+                      onClick={() => setShowBillingForm(false)}
+                      className="absolute top-3 right-3 text-slate-400 hover:text-slate-600 p-1"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+
+                    <div className="text-center pb-2 border-b border-slate-200">
+                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center justify-center gap-1">
+                        💳 {billingPlan === "monthly" ? "মাসিক প্ল্যান (৳৫০০)" : "বাৎসরিক প্ল্যান (৳৫০০০)"} আপগ্রেড
+                      </h4>
+                      <p className="text-[9px] text-slate-500 font-bold mt-1">বিকাশ বা নগদ এর মাধ্যমে টাকা পাঠিয়ে পেমেন্ট সম্পন্ন করুন।</p>
+                    </div>
+
+                    {/* Step 1: Gateway Selection */}
+                    <div className="space-y-1.5">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase ml-1">১. পেমেন্ট গেটওয়ে নির্বাচন করুন</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setBillingGateway("bkash")}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 border cursor-pointer ${
+                            billingGateway === "bkash"
+                              ? "bg-pink-50 text-pink-700 border-pink-400"
+                              : "bg-white text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-pink-500 animate-ping"></span>
+                          বিকাশ (bKash)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBillingGateway("nagad")}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 border cursor-pointer ${
+                            billingGateway === "nagad"
+                              ? "bg-orange-50 text-orange-700 border-orange-400"
+                              : "bg-white text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-orange-500 animate-ping"></span>
+                          নগদ (Nagad)
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Step 2: Payment Instructions */}
+                    <div className="bg-slate-100 p-3 rounded-xl border border-slate-200 space-y-1">
+                      <p className="text-[10px] text-slate-700 leading-normal font-semibold">
+                        📲 নিচের <b>Personal</b> নম্বরে <span className="text-indigo-600 underline font-black">{billingPlan === "monthly" ? "৳৫০০" : "৳৫০০০"}</span> টাকা <b>Send Money</b> করুন:
+                      </p>
+                      <div className="flex items-center justify-between text-xs bg-white px-3 py-2 rounded-lg border border-slate-200 font-mono font-bold text-slate-800">
+                        <span>{billingGateway === "bkash" ? "01789-123456" : "01987-654321"}</span>
+                        <span className="text-[9px] bg-indigo-100 text-indigo-700 font-sans px-1.5 py-0.5 rounded-full">পার্সোনাল</span>
+                      </div>
+                    </div>
+
+                    {/* Step 3: Payment details inputs */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 mb-1 ml-1 block">আপনার নম্বর</label>
+                        <input
+                          type="tel"
+                          placeholder="017xxxxxxxx"
+                          value={billingPhone}
+                          onChange={(e) => setBillingPhone(e.target.value)}
+                          className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 mb-1 ml-1 block">ট্রানজেকশন আইডি (TxID)</label>
+                        <input
+                          type="text"
+                          placeholder="8J2K9L4M"
+                          value={billingTxId}
+                          onChange={(e) => setBillingTxId(e.target.value)}
+                          className="w-full bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold outline-none focus:border-indigo-500 uppercase"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Submission button */}
+                    <button
+                      type="button"
+                      disabled={billingSubmitting}
+                      onClick={handleSubmitUpgradeRequest}
+                      className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-2.5 rounded-xl text-xs font-bold tracking-wide transition active:scale-98 shadow-md cursor-pointer disabled:opacity-75"
+                    >
+                      {billingSubmitting ? "রিকোয়েস্ট সাবমিট হচ্ছে..." : "পেমেন্ট নিশ্চিতকরণ ও সাবমিট"}
+                    </button>
+
+                    {/* Simulator Button - Best DX ever! */}
+                    <div className="pt-2 border-t border-slate-200/50 flex flex-col gap-1.5">
+                      <p className="text-[8px] text-slate-400 font-black text-center uppercase tracking-widest">
+                        ⚙️ Developer Preview Simulator
+                      </p>
+                      <button
+                        type="button"
+                        disabled={billingSubmitting}
+                        onClick={() => handleInstantSimulatorUpgrade(billingPlan)}
+                        className="w-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 py-2 rounded-xl text-[10px] font-black transition active:scale-98 cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+                        <span>সরাসরি টেস্ট করার জন্য অ্যাক্টিভেট করুন (সিমুলেটর)</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

@@ -31,6 +31,13 @@ export interface User {
   address?: string;
   canSeeAllData?: boolean;
   whatsapp?: string;
+  plan?: "free" | "monthly" | "yearly";
+  planActiveUntil?: number;
+  planRequested?: "monthly" | "yearly" | null;
+  planRequestTxId?: string;
+  planRequestMobile?: string;
+  planRequestAmount?: number;
+  planRequestAt?: number;
 }
 
 export interface HistoryEntry {

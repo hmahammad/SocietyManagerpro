@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { collection, query, where, onSnapshot, collectionGroup } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { User } from "./types";
 import AuthView from "./components/AuthView";
@@ -30,6 +30,20 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("app_language", language);
   }, [language]);
+
+  // Theme selection state (defaults to "light")
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    return (localStorage.getItem("app_theme") as "light" | "dark") || "light";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("app_theme", theme);
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [theme]);
 
   // Router-like state variables
   const [currentView, setCurrentView] = useState<RouteView>("login");
@@ -89,6 +103,127 @@ export default function App() {
     return () => unsub();
   }, [firebaseUser]);
 
+  // Subscription system entry counting
+  const [totalEntries, setTotalEntries] = useState(0);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setTotalEntries(0);
+      return;
+    }
+
+    const companyId = currentUser.role === "company" ? currentUser.docId : (currentUser.companyId || "");
+    if (!companyId) {
+      setTotalEntries(0);
+      return;
+    }
+
+    let usersList: any[] = [];
+    let projectsList: any[] = [];
+    let installmentsCount = 0;
+    let latestLedgerCount = 0;
+    let latestHistories: any[] = [];
+
+    const computeTotal = (uList: any[], pList: any[], iCount: number, lCount: number, hList: any[]) => {
+      const companyMemberIds = new Set(
+        uList.filter((u) => u.role === "member" && u.companyId === companyId).map((u) => u.docId)
+      );
+      const mCount = companyMemberIds.size;
+      const projCount = pList.filter((p) => p.companyId === companyId).length;
+      const histCount = hList.filter((h) => companyMemberIds.has(h.userDocId)).length;
+
+      const total = mCount + projCount + iCount + histCount + lCount;
+      setTotalEntries(total);
+    };
+
+    // Role-based Users Query
+    const userQuery = currentUser.role === "admin"
+      ? collection(db, "users")
+      : query(collection(db, "users"), where("companyId", "==", companyId));
+
+    const unsubUsers = onSnapshot(userQuery, (snap) => {
+      usersList = [];
+      snap.forEach((d) => {
+        usersList.push({ docId: d.id, ...d.data() });
+      });
+      if (currentUser.role === "company" && !usersList.some((u) => u.docId === currentUser.docId)) {
+        usersList.push(currentUser);
+      }
+      computeTotal(usersList, projectsList, installmentsCount, latestLedgerCount, latestHistories);
+    });
+
+    // Role-based Projects Query
+    const projectQuery = currentUser.role === "admin"
+      ? collection(db, "projects")
+      : query(collection(db, "projects"), where("companyId", "==", companyId));
+
+    const unsubProjects = onSnapshot(projectQuery, (snap) => {
+      projectsList = [];
+      snap.forEach((d) => {
+        projectsList.push({ id: d.id, ...d.data() });
+      });
+      computeTotal(usersList, projectsList, installmentsCount, latestLedgerCount, latestHistories);
+    });
+
+    // Role-based Installments Query
+    const installmentQuery = currentUser.role === "admin"
+      ? collection(db, "installments")
+      : query(collection(db, "installments"), where("companyId", "==", companyId));
+
+    const unsubInstallments = onSnapshot(installmentQuery, (snap) => {
+      installmentsCount = snap.docs.length;
+      computeTotal(usersList, projectsList, installmentsCount, latestLedgerCount, latestHistories);
+    });
+
+    // Role-based Accounts Query
+    const accountQuery = currentUser.role === "admin"
+      ? collection(db, "accounts")
+      : query(collection(db, "accounts"), where("companyId", "==", companyId));
+
+    const unsubAccounts = onSnapshot(accountQuery, (snap) => {
+      latestLedgerCount = snap.docs.length;
+      computeTotal(usersList, projectsList, installmentsCount, latestLedgerCount, latestHistories);
+    });
+
+    // Role-based History Query
+    let unsubAllHistory: () => void;
+    if (currentUser.role === "admin") {
+      unsubAllHistory = onSnapshot(collectionGroup(db, "history"), (snap) => {
+        latestHistories = [];
+        snap.forEach((d) => {
+          const parentUserDocId = d.ref.parent?.parent?.id || "";
+          latestHistories.push({ docId: d.id, userDocId: parentUserDocId });
+        });
+        computeTotal(usersList, projectsList, installmentsCount, latestLedgerCount, latestHistories);
+      });
+    } else if (currentUser.role === "member") {
+      unsubAllHistory = onSnapshot(collection(db, "users", currentUser.docId, "history"), (snap) => {
+        latestHistories = [];
+        snap.forEach((d) => {
+          latestHistories.push({ docId: d.id, userDocId: currentUser.docId });
+        });
+        computeTotal(usersList, projectsList, installmentsCount, latestLedgerCount, latestHistories);
+      });
+    } else {
+      unsubAllHistory = onSnapshot(collectionGroup(db, "history"), (snap) => {
+        latestHistories = [];
+        snap.forEach((d) => {
+          const parentUserDocId = d.ref.parent?.parent?.id || "";
+          latestHistories.push({ docId: d.id, userDocId: parentUserDocId });
+        });
+        computeTotal(usersList, projectsList, installmentsCount, latestLedgerCount, latestHistories);
+      });
+    }
+
+    return () => {
+      unsubUsers();
+      unsubProjects();
+      unsubInstallments();
+      unsubAccounts();
+      unsubAllHistory();
+    };
+  }, [currentUser]);
+
   const handleNavigate = (view: string, params: any = null) => {
     if (currentUser) {
       const isActive = currentUser.status === "active";
@@ -118,13 +253,15 @@ export default function App() {
 
   // Render correct view based on state
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 select-none pb-20 md:pb-0">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 select-none pb-20 md:pb-0 transition-colors duration-200">
       <GlobalHeader
         currentUser={currentUser}
         currentView={currentView}
         onNavigate={handleNavigate}
         language={language}
         setLanguage={setLanguage}
+        theme={theme}
+        setTheme={setTheme}
       />
       <GlobalSlider currentUser={currentUser} language={language} />
       <AnimatePresence mode="wait">
@@ -136,7 +273,7 @@ export default function App() {
           transition={{ duration: 0.2, ease: "easeInOut" }}
         >
           {currentView === "dashboard" && (
-            <DashboardView currentUser={currentUser} onNavigate={handleNavigate} />
+            <DashboardView currentUser={currentUser} onNavigate={handleNavigate} navigationParams={navigationParams} totalEntries={totalEntries} />
           )}
 
           {currentView === "member-list" && (
@@ -144,7 +281,7 @@ export default function App() {
           )}
 
           {currentView === "member-add" && (
-            <MemberAddView currentUser={currentUser} onNavigate={handleNavigate} />
+            <MemberAddView currentUser={currentUser} onNavigate={handleNavigate} totalEntries={totalEntries} />
           )}
 
           {currentView === "profile" && (
@@ -152,6 +289,7 @@ export default function App() {
               currentUser={currentUser}
               targetId={navigationParams?.id}
               onNavigate={handleNavigate}
+              totalEntries={totalEntries}
             />
           )}
 

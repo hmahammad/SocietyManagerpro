@@ -9,9 +9,10 @@ import { normalizePhoneNumber } from "../utils/firestore";
 interface MemberAddViewProps {
   currentUser: User;
   onNavigate: (view: string) => void;
+  totalEntries?: number;
 }
 
-export default function MemberAddView({ currentUser, onNavigate }: MemberAddViewProps) {
+export default function MemberAddView({ currentUser, onNavigate, totalEntries = 0 }: MemberAddViewProps) {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 

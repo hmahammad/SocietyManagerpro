@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { auth, db } from "../firebase";
 import { User } from "../types";
 import { doc, getDoc, collection, query, where, getDocs, limit, onSnapshot } from "firebase/firestore";
-import { LayoutDashboard, Users, UserPlus, User as UserIcon, LogOut, Building2, AlertCircle, Bell, ArrowLeftRight } from "lucide-react";
+import { LayoutDashboard, Users, UserPlus, User as UserIcon, LogOut, Building2, AlertCircle, Bell, ArrowLeftRight, Plus, Sun, Moon, Globe, Settings } from "lucide-react";
 import { translations, Language } from "../utils/translations";
 
 interface GlobalHeaderProps {
@@ -11,9 +11,11 @@ interface GlobalHeaderProps {
   onNavigate: (view: string, params?: any) => void;
   language?: Language;
   setLanguage?: (lang: Language) => void;
+  theme?: "light" | "dark";
+  setTheme?: (theme: "light" | "dark") => void;
 }
 
-export default function GlobalHeader({ currentUser, currentView, onNavigate, language = "bn", setLanguage }: GlobalHeaderProps) {
+export default function GlobalHeader({ currentUser, currentView, onNavigate, language = "bn", setLanguage, theme = "light", setTheme }: GlobalHeaderProps) {
   const t = translations[language];
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -114,22 +116,22 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white border-b border-slate-100 shadow-sm font-sans select-none">
+    <header className="sticky top-0 z-50 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 shadow-sm font-sans select-none transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16 items-center">
+        <div className="flex justify-between h-12 items-center">
           {/* Left: Brand logo & name */}
           <div 
             onClick={() => isActiveOrAdmin && onNavigate("dashboard")}
             className="flex items-center gap-2 cursor-pointer active:scale-95 transition animate-fadeIn"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md">
-              <Building2 className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md">
+              <Building2 className="w-4.5 h-4.5" />
             </div>
             <div>
-              <span className="font-extrabold text-sm sm:text-base text-slate-800 tracking-tight block">
+              <span className="font-extrabold text-xs sm:text-sm text-slate-800 dark:text-slate-100 tracking-tight block">
                 {displayCompanyName || currentUser.companyName || (language === "bn" ? "সোসাইটি ম্যানেজার" : "Society Manager")}
               </span>
-              <span className="text-[9px] text-slate-400 font-bold block -mt-0.5">
+              <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold block -mt-0.5">
                 {currentUser.name} ({currentUser.role === "admin" ? t.admin : currentUser.role === "company" ? t.company : t.member})
               </span>
             </div>
@@ -140,10 +142,10 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
             <nav className="hidden md:flex space-x-1">
               <button
                 onClick={() => onNavigate("dashboard")}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                   currentView === "dashboard"
-                    ? "bg-blue-50 text-blue-600"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                    ? "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-950 dark:hover:text-slate-100"
                 }`}
               >
                 <LayoutDashboard className="w-4 h-4" />
@@ -152,10 +154,10 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
 
               <button
                 onClick={() => onNavigate("transactions")}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                   currentView === "transactions"
-                    ? "bg-blue-50 text-blue-600"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                    ? "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-950 dark:hover:text-slate-100"
                 }`}
               >
                 <ArrowLeftRight className="w-4 h-4" />
@@ -166,10 +168,10 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
                 <>
                   <button
                     onClick={() => onNavigate("member-list")}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                       currentView === "member-list"
-                        ? "bg-blue-50 text-blue-600"
-                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                        ? "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400"
+                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-950 dark:hover:text-slate-100"
                     }`}
                   >
                     <Users className="w-4 h-4" />
@@ -178,10 +180,10 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
 
                   <button
                     onClick={() => onNavigate("arrears")}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                       currentView === "arrears"
-                        ? "bg-blue-50 text-blue-600"
-                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                        ? "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400"
+                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-950 dark:hover:text-slate-100"
                     }`}
                   >
                     <AlertCircle className="w-4 h-4" />
@@ -190,10 +192,10 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
 
                   <button
                     onClick={() => onNavigate("member-add")}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                       currentView === "member-add"
-                        ? "bg-blue-50 text-blue-600"
-                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                        ? "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400"
+                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-950 dark:hover:text-slate-100"
                     }`}
                   >
                     <UserPlus className="w-4 h-4" />
@@ -204,10 +206,10 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
 
               <button
                 onClick={() => onNavigate("profile")}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                   currentView === "profile"
-                    ? "bg-blue-50 text-blue-600"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                    ? "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-950 dark:hover:text-slate-100"
                 }`}
               >
                 <UserIcon className="w-4 h-4" />
@@ -218,29 +220,20 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
 
           {/* Right: User Menu & Notification Bell */}
           <div className="flex items-center gap-2">
-            {/* Language Switcher */}
-            <button
-              onClick={() => setLanguage && setLanguage(language === "bn" ? "en" : "bn")}
-              className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:border-slate-300 bg-slate-50 hover:bg-slate-100 text-[11px] font-black text-slate-700 active:scale-95 transition cursor-pointer"
-              title={language === "bn" ? "Switch to English" : "বাংলায় পরিবর্তন করুন"}
-            >
-              {language === "bn" ? "EN" : "বাংলা"}
-            </button>
-
             {/* Elegant Header Notification Bell */}
             {isActiveOrAdmin && (
               <button
                 onClick={() => onNavigate("notifications")}
-                className={`w-9 h-9 rounded-full flex items-center justify-center border transition relative cursor-pointer active:scale-95 shrink-0 ${
+                className={`w-8 h-8 rounded-full flex items-center justify-center border transition relative cursor-pointer active:scale-95 shrink-0 ${
                   currentView === "notifications"
-                    ? "bg-indigo-50 border-indigo-200 text-indigo-600"
-                    : "bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-800"
+                    ? "bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400"
+                    : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                 }`}
                 title={t.notifications}
               >
-                <Bell className="w-4.5 h-4.5" />
+                <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-rose-600 text-white font-black text-[9px] min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center border-2 border-white shadow-md animate-bounce">
+                  <span className="absolute -top-1 -right-1 bg-rose-600 text-white font-black text-[8px] min-w-[16px] h-[16px] px-1 rounded-full flex items-center justify-center border border-white dark:border-slate-900 shadow-md animate-bounce">
                     {unreadCount}
                   </span>
                 )}
@@ -250,7 +243,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
             <div className="relative">
               <button
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="w-9 h-9 rounded-full overflow-hidden border border-slate-200 hover:border-slate-300 shadow-sm active:scale-95 transition cursor-pointer shrink-0"
+                className="w-8 h-8 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 shadow-sm active:scale-95 transition cursor-pointer shrink-0"
               >
                 <img
                   src={currentUser.profilePic || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=2563eb&color=fff`}
@@ -262,13 +255,13 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
               {showProfileMenu && (
                 <>
                   <div 
-                    className="fixed inset-0 z-40 bg-black/5" 
+                    className="fixed inset-0 z-40 bg-black/5 dark:bg-black/20" 
                     onClick={() => setShowProfileMenu(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 text-slate-800 animate-fadeIn font-sans">
-                    <div className="px-3 py-2 border-b border-slate-100 text-left">
-                      <p className="text-xs font-extrabold text-slate-800 truncate">{currentUser.name}</p>
-                      <p className="text-[10px] text-slate-400 truncate">{currentUser.email}</p>
+                  <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 py-2 z-50 text-slate-800 dark:text-slate-100 animate-fadeIn font-sans transition-colors duration-200">
+                    <div className="px-3.5 py-2 border-b border-slate-100 dark:border-slate-800 text-left">
+                      <p className="text-xs font-extrabold text-slate-800 dark:text-slate-100 truncate">{currentUser.name}</p>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">{currentUser.email}</p>
                     </div>
                     
                     <div className="py-1">
@@ -277,9 +270,9 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
                           setShowProfileMenu(false);
                           onNavigate("profile");
                         }}
-                        className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 transition flex items-center gap-2 cursor-pointer"
+                        className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-slate-100"
                       >
-                        <UserIcon className="w-3.5 h-3.5 text-slate-400" /> {t.profile}
+                        <UserIcon className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" /> {t.profile}
                       </button>
 
                       <button
@@ -287,9 +280,9 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
                           setShowProfileMenu(false);
                           onNavigate("transactions");
                         }}
-                        className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 transition flex items-center gap-2 cursor-pointer"
+                        className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-slate-100"
                       >
-                        <ArrowLeftRight className="w-3.5 h-3.5 text-slate-400" /> {t.transactions}
+                        <ArrowLeftRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" /> {t.transactions}
                       </button>
 
                       {isCompanyOrAdmin && isActiveOrAdmin && (
@@ -299,9 +292,9 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
                               setShowProfileMenu(false);
                               onNavigate("member-list");
                             }}
-                            className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 transition flex items-center gap-2 cursor-pointer"
+                            className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-slate-100"
                           >
-                            <Users className="w-3.5 h-3.5 text-slate-400" /> {t.memberList}
+                            <Users className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" /> {t.memberList}
                           </button>
 
                           <button
@@ -309,9 +302,9 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
                               setShowProfileMenu(false);
                               onNavigate("arrears");
                             }}
-                            className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 transition flex items-center gap-2 cursor-pointer"
+                            className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-slate-100"
                           >
-                            <AlertCircle className="w-3.5 h-3.5 text-slate-400" /> {t.arrearsList}
+                            <AlertCircle className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" /> {t.arrearsList}
                           </button>
 
                           <button
@@ -319,30 +312,71 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
                               setShowProfileMenu(false);
                               onNavigate("member-add");
                             }}
-                            className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 transition flex items-center gap-2 cursor-pointer"
+                            className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-slate-100"
                           >
-                            <UserPlus className="w-3.5 h-3.5 text-slate-400" /> {t.memberAddFull}
+                            <UserPlus className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" /> {t.memberAddFull}
                           </button>
                         </>
                       )}
 
-                      <hr className="my-1 border-slate-100" />
+                      <hr className="my-1 border-slate-100 dark:border-slate-800" />
 
-                      <div className="px-3 py-1.5 space-y-1 text-left">
-                        <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">{t.supportAndContact}</p>
+                      {/* Settings & Preferences Section */}
+                      <div className="px-3.5 py-2 text-left space-y-2">
+                        <p className="text-[9px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                          {t.preferences}
+                        </p>
+                        
+                        {/* Day/Night Mode Switcher */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                            {theme === "dark" ? <Moon className="w-3.5 h-3.5 text-indigo-400" /> : <Sun className="w-3.5 h-3.5 text-amber-500" />}
+                            {t.dayNightMode}
+                          </span>
+                          <button
+                            onClick={() => setTheme && setTheme(theme === "dark" ? "light" : "dark")}
+                            className="relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none bg-slate-200 dark:bg-indigo-600"
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                                theme === "dark" ? "translate-x-3.5" : "translate-x-0"
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Language Switcher */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                            <Globe className="w-3.5 h-3.5 text-blue-500" />
+                            {t.changeLanguage}
+                          </span>
+                          <button
+                            onClick={() => setLanguage && setLanguage(language === "bn" ? "en" : "bn")}
+                            className="px-1.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-[9px] font-black text-slate-700 dark:text-slate-300 active:scale-95 transition cursor-pointer animate-fadeIn"
+                          >
+                            {language === "bn" ? "English" : "বাংলা"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <hr className="my-1 border-slate-100 dark:border-slate-800" />
+
+                      <div className="px-3.5 py-1.5 space-y-1 text-left">
+                        <p className="text-[9px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">{t.supportAndContact}</p>
                         
                         {companyWhatsapp ? (
                           <a
                             href={`https://wa.me/${companyWhatsapp.replace(/\D/g, "")}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="flex items-center justify-between p-1.5 rounded-lg bg-emerald-50/70 hover:bg-emerald-100 text-emerald-800 font-bold text-[10px] transition group"
+                            className="flex items-center justify-between p-1.5 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 font-bold text-[10px] transition group"
                           >
                             <span className="flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               {t.companySupport}
                             </span>
-                            <span className="text-[9px] text-emerald-600 font-mono tracking-tight group-hover:underline">
+                            <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-mono tracking-tight group-hover:underline">
                               {companyWhatsapp}
                             </span>
                           </a>
@@ -353,27 +387,27 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
                             href={`https://wa.me/${adminWhatsapp.replace(/\D/g, "")}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="flex items-center justify-between p-1.5 rounded-lg bg-blue-50/70 hover:bg-blue-100 text-blue-800 font-bold text-[10px] transition group"
+                            className="flex items-center justify-between p-1.5 rounded-lg bg-blue-50/70 dark:bg-blue-950/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-800 dark:text-blue-300 font-bold text-[10px] transition group"
                           >
                             <span className="flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                               {t.devSupport}
                             </span>
-                            <span className="text-[9px] text-blue-600 font-mono tracking-tight group-hover:underline">
+                            <span className="text-[9px] text-blue-600 dark:text-blue-400 font-mono tracking-tight group-hover:underline">
                               {adminWhatsapp}
                             </span>
                           </a>
                         ) : null}
                       </div>
 
-                      <hr className="my-1 border-slate-100" />
+                      <hr className="my-1 border-slate-100 dark:border-slate-800" />
 
                       <button
                         onClick={() => {
                           setShowProfileMenu(false);
                           handleLogout();
                         }}
-                        className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-rose-50 text-rose-600 transition flex items-center gap-2 cursor-pointer"
+                        className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-400 transition flex items-center gap-2 cursor-pointer"
                       >
                         <LogOut className="w-3.5 h-3.5" /> {t.logout}
                       </button>
@@ -388,7 +422,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
         {/* Fixed Mobile Bottom Navigation Bar */}
         {isActiveOrAdmin && (
           <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-white/95 backdrop-blur-md border-t border-slate-150 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] pb-safe">
-            <div className="flex items-center justify-around h-16 px-1">
+            <div className="flex items-center justify-around h-14 px-1 relative">
               <button
                 onClick={() => onNavigate("dashboard")}
                 className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all duration-200 cursor-pointer ${
@@ -413,19 +447,19 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
                 <span className="text-[9px] tracking-tight">{t.transactions}</span>
               </button>
 
-              {isCompanyOrAdmin && (
+              {isCompanyOrAdmin ? (
                 <>
-                  <button
-                    onClick={() => onNavigate("member-list")}
-                    className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all duration-200 cursor-pointer ${
-                      currentView === "member-list"
-                        ? "text-blue-600 scale-105 font-black"
-                        : "text-slate-500 hover:text-slate-800 font-bold"
-                    }`}
-                  >
-                    <Users className={`w-5 h-5 transition-transform ${currentView === "member-list" ? "scale-110 text-blue-600" : "text-slate-400"}`} />
-                    <span className="text-[9px] tracking-tight">{t.memberList}</span>
-                  </button>
+                  {/* Central Large Round Prominent Entry Button */}
+                  <div className="flex-1 flex justify-center py-1 select-none">
+                    <button
+                      onClick={() => onNavigate("dashboard", { openAdd: Date.now() })}
+                      className="absolute -top-5 w-14 h-14 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white flex items-center justify-center shadow-[0_4px_15px_rgba(37,99,235,0.35)] active:scale-95 transition-all duration-200 border-4 border-white cursor-pointer z-50 animate-fadeIn"
+                    >
+                      <Plus className="w-6 h-6 text-white stroke-[3.5px]" />
+                    </button>
+                    {/* Placeholder space to push other buttons symmetrically */}
+                    <div className="w-12 h-10" />
+                  </div>
 
                   <button
                     onClick={() => onNavigate("arrears")}
@@ -440,30 +474,32 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
                   </button>
 
                   <button
-                    onClick={() => onNavigate("member-add")}
+                    onClick={() => onNavigate("member-list")}
                     className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all duration-200 cursor-pointer ${
-                      currentView === "member-add"
+                      currentView === "member-list"
                         ? "text-blue-600 scale-105 font-black"
                         : "text-slate-500 hover:text-slate-800 font-bold"
                     }`}
                   >
-                    <UserPlus className={`w-5 h-5 transition-transform ${currentView === "member-add" ? "scale-110 text-blue-600" : "text-slate-400"}`} />
-                    <span className="text-[9px] tracking-tight">{t.memberAdd}</span>
+                    <Users className={`w-5 h-5 transition-transform ${currentView === "member-list" ? "scale-110 text-blue-600" : "text-slate-400"}`} />
+                    <span className="text-[9px] tracking-tight">{t.memberList}</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => onNavigate("arrears")}
+                    className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all duration-200 cursor-pointer ${
+                      currentView === "arrears"
+                        ? "text-blue-600 scale-105 font-black"
+                        : "text-slate-500 hover:text-slate-800 font-bold"
+                    }`}
+                  >
+                    <AlertCircle className={`w-5 h-5 transition-transform ${currentView === "arrears" ? "scale-110 text-blue-600" : "text-slate-400"}`} />
+                    <span className="text-[9px] tracking-tight">{t.arrears}</span>
                   </button>
                 </>
               )}
-
-              <button
-                onClick={() => onNavigate("profile")}
-                className={`flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-all duration-200 cursor-pointer ${
-                  currentView === "profile"
-                    ? "text-blue-600 scale-105 font-black"
-                    : "text-slate-500 hover:text-slate-800 font-bold"
-                }`}
-              >
-                <UserIcon className={`w-5 h-5 transition-transform ${currentView === "profile" ? "scale-110 text-blue-600" : "text-slate-400"}`} />
-                <span className="text-[9px] tracking-tight">{t.profile}</span>
-              </button>
             </div>
           </div>
         )}

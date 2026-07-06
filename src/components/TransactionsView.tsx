@@ -10,7 +10,9 @@ import {
   updateDoc, 
   deleteDoc, 
   getDocs, 
-  increment 
+  increment,
+  query,
+  where
 } from "firebase/firestore";
 import { 
   ArrowLeftRight, 
@@ -126,17 +128,28 @@ export default function TransactionsView({ currentUser, onNavigate }: Transactio
 
     const targetCompanyId = currentUser.role === "company" ? currentUser.docId : currentUser.companyId;
 
-    // 1. Users subscription
-    const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+    // 1. Role-based Users Query
+    const userQuery = currentUser.role === "admin"
+      ? collection(db, "users")
+      : query(collection(db, "users"), where("companyId", "==", targetCompanyId || ""));
+
+    const unsubUsers = onSnapshot(userQuery, (snap) => {
       const list: User[] = [];
       snap.forEach((d) => {
         list.push({ docId: d.id, ...d.data() } as User);
       });
+      if (currentUser.role === "company" && !list.some((u) => u.docId === currentUser.docId)) {
+        list.push(currentUser);
+      }
       setUsers(list);
     });
 
-    // 2. Projects subscription
-    const unsubProjects = onSnapshot(collection(db, "projects"), (snap) => {
+    // 2. Role-based Projects Query
+    const projectQuery = currentUser.role === "admin"
+      ? collection(db, "projects")
+      : query(collection(db, "projects"), where("companyId", "==", targetCompanyId || ""));
+
+    const unsubProjects = onSnapshot(projectQuery, (snap) => {
       const list: Project[] = [];
       snap.forEach((d) => {
         list.push({ id: d.id, ...d.data() } as Project);
@@ -144,8 +157,12 @@ export default function TransactionsView({ currentUser, onNavigate }: Transactio
       setProjects(list);
     });
 
-    // 3. Accounts (Transactions) subscription
-    const unsubAccounts = onSnapshot(collection(db, "accounts"), (snap) => {
+    // 3. Role-based Accounts (Transactions) Query
+    const accountQuery = currentUser.role === "admin"
+      ? collection(db, "accounts")
+      : query(collection(db, "accounts"), where("companyId", "==", targetCompanyId || ""));
+
+    const unsubAccounts = onSnapshot(accountQuery, (snap) => {
       const list: Transaction[] = [];
       snap.forEach((d) => {
         list.push({ id: d.id, ...d.data() } as Transaction);
@@ -153,8 +170,12 @@ export default function TransactionsView({ currentUser, onNavigate }: Transactio
       setCompanyTransactions(list);
     });
 
-    // 4. Installments subscription
-    const unsubInstallments = onSnapshot(collection(db, "installments"), (snap) => {
+    // 4. Role-based Installments Query
+    const installmentQuery = currentUser.role === "admin"
+      ? collection(db, "installments")
+      : query(collection(db, "installments"), where("companyId", "==", targetCompanyId || ""));
+
+    const unsubInstallments = onSnapshot(installmentQuery, (snap) => {
       const list: Installment[] = [];
       snap.forEach((d) => {
         list.push({ id: d.id, ...d.data() } as Installment);
@@ -162,19 +183,39 @@ export default function TransactionsView({ currentUser, onNavigate }: Transactio
       setInstallments(list);
     });
 
-    // 5. All User History entries subscription (using collectionGroup)
-    const unsubAllHistory = onSnapshot(collectionGroup(db, "history"), (snap) => {
-      const list: (HistoryEntry & { userDocId: string })[] = [];
-      snap.forEach((d) => {
-        const parentUserDocId = d.ref.parent?.parent?.id || "";
-        list.push({ docId: d.id, userDocId: parentUserDocId, ...d.data() } as any);
+    // 5. Role-based History Query
+    let unsubAllHistory: () => void;
+    if (currentUser.role === "admin") {
+      unsubAllHistory = onSnapshot(collectionGroup(db, "history"), (snap) => {
+        const list: (HistoryEntry & { userDocId: string })[] = [];
+        snap.forEach((d) => {
+          const parentUserDocId = d.ref.parent?.parent?.id || "";
+          list.push({ docId: d.id, userDocId: parentUserDocId, ...d.data() } as any);
+        });
+        setAllHistories(list);
+        setLoading(false);
       });
-      setAllHistories(list);
-      setLoading(false);
-    });
+    } else if (currentUser.role === "member") {
+      unsubAllHistory = onSnapshot(collection(db, "users", currentUser.docId, "history"), (snap) => {
+        const list: (HistoryEntry & { userDocId: string })[] = [];
+        snap.forEach((d) => {
+          list.push({ docId: d.id, userDocId: currentUser.docId, ...d.data() } as any);
+        });
+        setAllHistories(list);
+        setLoading(false);
+      });
+    } else {
+      unsubAllHistory = () => {
+        setLoading(false);
+      };
+    }
 
-    // 6. Transaction Requests subscription
-    const unsubRequests = onSnapshot(collection(db, "transaction_requests"), (snap) => {
+    // 6. Role-based Transaction Requests Query
+    const requestQuery = currentUser.role === "admin"
+      ? collection(db, "transaction_requests")
+      : query(collection(db, "transaction_requests"), where("companyId", "==", targetCompanyId || ""));
+
+    const unsubRequests = onSnapshot(requestQuery, (snap) => {
       const list: TransactionRequest[] = [];
       snap.forEach((d) => {
         list.push({ id: d.id, ...d.data() } as TransactionRequest);
@@ -182,8 +223,12 @@ export default function TransactionsView({ currentUser, onNavigate }: Transactio
       setTransactionRequests(list);
     });
 
-    // 7. Company Payment Accounts subscription
-    const unsubCompanyAccounts = onSnapshot(collection(db, "company_payment_accounts"), (snap) => {
+    // 7. Role-based Company Payment Accounts Query
+    const paymentAccountQuery = currentUser.role === "admin"
+      ? collection(db, "company_payment_accounts")
+      : query(collection(db, "company_payment_accounts"), where("companyId", "==", targetCompanyId || ""));
+
+    const unsubCompanyAccounts = onSnapshot(paymentAccountQuery, (snap) => {
       const list: CompanyPaymentAccount[] = [];
       snap.forEach((d) => {
         list.push({ id: d.id, ...d.data() } as CompanyPaymentAccount);
@@ -201,6 +246,32 @@ export default function TransactionsView({ currentUser, onNavigate }: Transactio
       unsubCompanyAccounts();
     };
   }, [currentUser]);
+
+  // Live sync of all company members' histories for Company role
+  useEffect(() => {
+    if (currentUser.role !== "company") return;
+    if (users.length === 0) return;
+
+    // Filter company members
+    const companyMembers = users.filter((u) => u.role === "member" && u.companyId === currentUser.docId);
+
+    const unsubs = companyMembers.map((m) => {
+      return onSnapshot(collection(db, "users", m.docId, "history"), (snap) => {
+        setAllHistories((prev) => {
+          const filtered = prev.filter((h) => h.userDocId !== m.docId);
+          const newEntries: any[] = [];
+          snap.forEach((docSnap) => {
+            newEntries.push({ docId: docSnap.id, userDocId: m.docId, ...docSnap.data() });
+          });
+          return [...filtered, ...newEntries];
+        });
+      });
+    });
+
+    return () => {
+      unsubs.forEach((unsub) => unsub());
+    };
+  }, [users, currentUser]);
 
   // If the user is a standard member, lock their user filter & transaction form to their own docId
   useEffect(() => {

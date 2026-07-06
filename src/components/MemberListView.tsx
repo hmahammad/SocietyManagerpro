@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { collection, doc, deleteDoc, updateDoc, onSnapshot, getDocs } from "firebase/firestore";
+import { collection, doc, deleteDoc, updateDoc, onSnapshot, getDocs, addDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { User } from "../types";
 import {
@@ -229,6 +229,84 @@ export default function MemberListView({ currentUser, onNavigate }: MemberListVi
     }
   };
 
+  const handleApproveSubscription = async (user: User) => {
+    if (!window.confirm(`আপনি কি এই কোম্পানির ${user.planRequested === "monthly" ? "মাসিক" : "বাৎসরিক"} সাবস্ক্রিপশন সফলভাবে সক্রিয় করতে চান?`)) {
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const planRequested = user.planRequested || "monthly";
+      const days = planRequested === "monthly" ? 30 : 365;
+      const expireTime = Date.now() + days * 24 * 60 * 60 * 1000;
+
+      await updateDoc(doc(db, "users", user.docId), {
+        plan: planRequested,
+        planActiveUntil: expireTime,
+        planRequested: null,
+        planRequestTxId: "",
+        planRequestMobile: "",
+        planRequestAmount: 0,
+        planRequestAt: 0,
+      });
+
+      // Send a notification to the company
+      await addDoc(collection(db, "notifications"), {
+        title: "🎉 অভিনন্দন! আপনার সাবস্ক্রিপশন অ্যাক্টিভ হয়েছে",
+        body: `আপনার ${planRequested === "monthly" ? "মাসিক" : "বাৎসরিক"} প্রিমিয়াম সাবস্ক্রিপশন প্ল্যানটি সফলভাবে ভেরিফাই করে সক্রিয় করা হয়েছে। এখন থেকে আনলিমিটেড সার্ভিস ব্যবহার করতে পারবেন।`,
+        senderId: currentUser.docId,
+        senderName: "Admin",
+        senderRole: "admin",
+        targetType: "company",
+        targetUserId: user.docId,
+        createdAt: new Date().toISOString(),
+        readBy: [],
+      });
+
+      alert("সাবস্ক্রিপশন সফলভাবে সক্রিয় করা হয়েছে!");
+    } catch (e) {
+      console.error(e);
+      alert("সাবস্ক্রিপশন সক্রিয় করা যায়নি");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRejectSubscription = async (user: User) => {
+    if (!window.confirm("আপনি কি এই কোম্পানির সাবস্ক্রিপশন রিকোয়েস্ট বাতিল করতে চান?")) {
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await updateDoc(doc(db, "users", user.docId), {
+        planRequested: null,
+        planRequestTxId: "",
+        planRequestMobile: "",
+        planRequestAmount: 0,
+        planRequestAt: 0,
+      });
+
+      // Send notification to company
+      await addDoc(collection(db, "notifications"), {
+        title: "⚠️ সাবস্ক্রিপশন রিকোয়েস্ট বাতিল করা হয়েছে",
+        body: "দুঃখিত, আপনার সাবস্ক্রিপশন রিকোয়েস্টটি বাতিল করা হয়েছে। অনুগ্রহ করে সঠিক ট্রানজেকশন তথ্য দিয়ে আবার চেষ্টা করুন বা অ্যাডমিনের সাথে যোগাযোগ করুন।",
+        senderId: currentUser.docId,
+        senderName: "Admin",
+        senderRole: "admin",
+        targetType: "company",
+        targetUserId: user.docId,
+        createdAt: new Date().toISOString(),
+        readBy: [],
+      });
+
+      alert("রিকোয়েস্ট সফলভাবে বাতিল করা হয়েছে");
+    } catch (e) {
+      console.error(e);
+      alert("রিকোয়েস্ট বাতিল করা যায়নি");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Filter application
   const filteredList = allUsers.filter((u) => {
     // Search filter
@@ -239,7 +317,9 @@ export default function MemberListView({ currentUser, onNavigate }: MemberListVi
       u.userId?.toLowerCase().includes(searchQuery.toLowerCase());
 
     // Status filter
-    const matchesStatus = selectedStatus === "all" || u.status === selectedStatus;
+    const matchesStatus =
+      selectedStatus === "all" ||
+      (selectedStatus === "subscription" ? !!u.planRequested : u.status === selectedStatus);
 
     // Company filter (For Admin only)
     const matchesCompany =
@@ -402,9 +482,14 @@ export default function MemberListView({ currentUser, onNavigate }: MemberListVi
 
         {/* Status Tabs */}
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-          {["all", "active", "pending", "request", "deactive"].map((status) => {
+          {(currentUser.role === "admin"
+            ? ["all", "active", "pending", "request", "deactive", "subscription"]
+            : ["all", "active", "pending", "request", "deactive"]
+          ).map((status) => {
             const count = status === "all"
               ? allUsers.length
+              : status === "subscription"
+              ? allUsers.filter((u) => u.planRequested).length
               : allUsers.filter((u) => u.status === status).length;
             return (
               <button
@@ -416,7 +501,7 @@ export default function MemberListView({ currentUser, onNavigate }: MemberListVi
                     : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300"
                 }`}
               >
-                <span>{status === "all" ? "সবাই" : STATUS_LABELS[status] || status}</span>
+                <span>{status === "all" ? "সবাই" : status === "subscription" ? "সাবস্ক্রিপশন" : STATUS_LABELS[status] || status}</span>
                 <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-black ${
                   selectedStatus === status ? "bg-white/30 text-white" : "bg-slate-100 text-slate-500"
                 }`}>
@@ -484,9 +569,15 @@ export default function MemberListView({ currentUser, onNavigate }: MemberListVi
                   <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 font-bold">
                     <th className="px-4 py-3.5 text-left">নাম ও ইউজার আইডি</th>
                     <th className="px-4 py-3.5 text-left">মোবাইল</th>
-                    <th className="px-4 py-3.5 text-left">সেভিংস ও ধরণ</th>
-                    <th className="px-4 py-3.5 text-left">বকেয়া সেভিংস</th>
-                    <th className="px-4 py-3.5 text-left">পরবর্তী সেভিংস সময়সূচী</th>
+                    <th className="px-4 py-3.5 text-left">
+                      {selectedStatus === "subscription" ? "অনুরোধকৃত প্ল্যান" : "সেভিংস ও ধরণ"}
+                    </th>
+                    <th className="px-4 py-3.5 text-left">
+                      {selectedStatus === "subscription" ? "পেমেন্ট নম্বর" : "বকেয়া সেভিংস"}
+                    </th>
+                    <th className="px-4 py-3.5 text-left">
+                      {selectedStatus === "subscription" ? "ট্রানজেকশন আইডি (TxID)" : "পরবর্তী সেভিংস সময়সূচী"}
+                    </th>
                     <th className="px-4 py-3.5 text-left">স্ট্যাটাস</th>
                     <th className="px-4 py-3.5 text-center">অ্যাকশন</th>
                   </tr>
@@ -537,37 +628,53 @@ export default function MemberListView({ currentUser, onNavigate }: MemberListVi
 
                         {/* Savings & Type */}
                         <td className="px-4 py-3">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] text-slate-400 font-extrabold uppercase">সেভিংস:</span>
-                              <span className="font-extrabold text-emerald-700 text-xs">৳{formatBDT(m.savingsBalance !== undefined ? m.savingsBalance : (m.amount || 0))}</span>
+                          {selectedStatus === "subscription" ? (
+                            <div className="space-y-0.5">
+                              <span className="text-[10px] text-slate-400 font-extrabold uppercase">অনুরোধকৃত প্ল্যান:</span>
+                              <p className="font-extrabold text-indigo-700 text-xs">
+                                {m.planRequested === "monthly" ? "মাসিক প্ল্যান" : "বাৎসরিক প্ল্যান"}
+                              </p>
+                              <span className="text-[9px] bg-indigo-50 text-indigo-600 font-extrabold px-1.5 py-0.2 rounded mt-1 inline-block">
+                                ৳{m.planRequested === "monthly" ? "৫০০" : "৫,০০০"}
+                              </span>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] text-slate-400 font-extrabold uppercase">ইনভেস্ট:</span>
-                              <span className="font-extrabold text-blue-700 text-xs">৳{formatBDT(m.investBalance || 0)}</span>
+                          ) : (
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-slate-400 font-extrabold uppercase">সেভিংস:</span>
+                                <span className="font-extrabold text-emerald-700 text-xs">৳{formatBDT(m.savingsBalance !== undefined ? m.savingsBalance : (m.amount || 0))}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-slate-400 font-extrabold uppercase">ইনভেস্ট:</span>
+                                <span className="font-extrabold text-blue-700 text-xs">৳{formatBDT(m.investBalance || 0)}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-slate-400 font-extrabold uppercase">ইনকাম:</span>
+                                <span className="font-extrabold text-amber-700 text-xs">৳{formatBDT(m.incomeBalance || 0)}</span>
+                              </div>
+                              <div className="flex gap-1 mt-1 flex-wrap">
+                                {m.accountType && (
+                                  <span className="text-[8px] bg-blue-50 text-blue-600 font-extrabold px-1.5 py-0.2 rounded">
+                                    {ACCT_LABELS[m.accountType] || m.accountType}
+                                  </span>
+                                )}
+                                {m.InvestType && (
+                                  <span className="text-[8px] bg-purple-50 text-purple-600 font-extrabold px-1.5 py-0.2 rounded">
+                                    {INVEST_LABELS[m.InvestType] || m.InvestType}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] text-slate-400 font-extrabold uppercase">ইনকাম:</span>
-                              <span className="font-extrabold text-amber-700 text-xs">৳{formatBDT(m.incomeBalance || 0)}</span>
-                            </div>
-                            <div className="flex gap-1 mt-1 flex-wrap">
-                              {m.accountType && (
-                                <span className="text-[8px] bg-blue-50 text-blue-600 font-extrabold px-1.5 py-0.2 rounded">
-                                  {ACCT_LABELS[m.accountType] || m.accountType}
-                                </span>
-                              )}
-                              {m.InvestType && (
-                                <span className="text-[8px] bg-purple-50 text-purple-600 font-extrabold px-1.5 py-0.2 rounded">
-                                  {INVEST_LABELS[m.InvestType] || m.InvestType}
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                          )}
                         </td>
 
                         {/* Savings Arrears */}
                         <td className="px-4 py-3">
-                          {arrearsLoading ? (
+                          {selectedStatus === "subscription" ? (
+                            <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-full">
+                              {m.planRequestMobile || "—"}
+                            </span>
+                          ) : arrearsLoading ? (
                             <span className="text-slate-300 text-[10px] animate-pulse">লোড হচ্ছে...</span>
                           ) : (
                             (() => {
@@ -586,45 +693,74 @@ export default function MemberListView({ currentUser, onNavigate }: MemberListVi
 
                         {/* Schedule Preview */}
                         <td className="px-4 py-3">
-                          {getSavingsSchedulePreview(m.InvestType, m.investDate || m.InvestDate)}
+                          {selectedStatus === "subscription" ? (
+                            <span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-full">
+                              {m.planRequestTxId || "—"}
+                            </span>
+                          ) : (
+                            getSavingsSchedulePreview(m.InvestType, m.investDate || m.InvestDate)
+                          )}
                         </td>
 
                         {/* Status */}
                         <td className="px-4 py-3">
-                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${STATUS_COLORS[m.status] || "bg-slate-400 text-white"}`}>
-                            {STATUS_LABELS[m.status] || m.status}
-                          </span>
+                          {selectedStatus === "subscription" ? (
+                            <span className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-amber-500 text-white animate-pulse">
+                              পেন্ডিং যাচাইকরণ
+                            </span>
+                          ) : (
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${STATUS_COLORS[m.status] || "bg-slate-400 text-white"}`}>
+                              {STATUS_LABELS[m.status] || m.status}
+                            </span>
+                          )}
                         </td>
 
                         {/* Actions */}
                         <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => onNavigate("profile", { id: m.docId })}
-                              className="p-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 transition"
-                              title="প্রোফাইল"
-                            >
-                              <UserIcon className="w-3.5 h-3.5" />
-                            </button>
-                            {(currentUser.role === "admin" || (currentUser.role === "company" && m.role === "member")) && (
-                              <>
-                                <button
-                                  onClick={() => setStatusTarget(m)}
-                                  className="p-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-600 transition"
-                                  title="স্ট্যাটাস পরিবর্তন"
-                                >
-                                  <ToggleRight className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => setDeleteTarget(m)}
-                                  className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition"
-                                  title="মুছে ফেলুন"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            )}
-                          </div>
+                          {selectedStatus === "subscription" ? (
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => handleApproveSubscription(m)}
+                                className="px-2.5 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-[10px] transition shadow-xs active:scale-95 cursor-pointer"
+                              >
+                                সক্রিয় করুন
+                              </button>
+                              <button
+                                onClick={() => handleRejectSubscription(m)}
+                                className="px-2.5 py-1 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-[10px] transition shadow-xs active:scale-95 cursor-pointer"
+                              >
+                                বাতিল করুন
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => onNavigate("profile", { id: m.docId })}
+                                className="p-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 transition"
+                                title="প্রোফাইল"
+                              >
+                                <UserIcon className="w-3.5 h-3.5" />
+                              </button>
+                              {(currentUser.role === "admin" || (currentUser.role === "company" && m.role === "member")) && (
+                                <>
+                                  <button
+                                    onClick={() => setStatusTarget(m)}
+                                    className="p-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-600 transition"
+                                    title="স্ট্যাটাস পরিবর্তন"
+                                  >
+                                    <ToggleRight className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteTarget(m)}
+                                    className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 transition"
+                                    title="মুছে ফেলুন"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );

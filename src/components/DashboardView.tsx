@@ -83,11 +83,13 @@ const calculateProjectDurationBn = (startStr: string, endStr: string): string =>
 interface DashboardViewProps {
   currentUser: User;
   onNavigate: (view: string, params?: any) => void;
+  navigationParams?: any;
+  totalEntries?: number;
 }
 
 type TabMode = "invest" | "projects" | "ledger";
 
-export default function DashboardView({ currentUser, onNavigate }: DashboardViewProps) {
+export default function DashboardView({ currentUser, onNavigate, navigationParams, totalEntries = 0 }: DashboardViewProps) {
   const [activeTab, setActiveTab] = useState<TabMode>("invest");
   const [loading, setLoading] = useState(true);
 
@@ -195,18 +197,41 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
   // Loading indicator for saves
   const [saving, setSaving] = useState(false);
 
+  // Trigger opening Add Modal when navigated with openAdd parameter
+  useEffect(() => {
+    if (navigationParams?.openAdd) {
+      handleFabClick();
+    }
+  }, [navigationParams]);
+
   // Fetch all main collections in realtime
   useEffect(() => {
     setLoading(true);
-    const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+
+    const companyId = currentUser.role === "company" ? currentUser.docId : (currentUser.companyId || "");
+
+    // 1. Role-based Users Query
+    const userQuery = currentUser.role === "admin"
+      ? collection(db, "users")
+      : query(collection(db, "users"), where("companyId", "==", companyId));
+
+    const unsubUsers = onSnapshot(userQuery, (snap) => {
       const list: User[] = [];
       snap.forEach((d) => {
         list.push({ docId: d.id, ...d.data() } as User);
       });
+      if (currentUser.role === "company" && !list.some((u) => u.docId === currentUser.docId)) {
+        list.push(currentUser);
+      }
       setUsers(list);
     });
 
-    const unsubProjects = onSnapshot(collection(db, "projects"), (snap) => {
+    // 2. Role-based Projects Query
+    const projectQuery = currentUser.role === "admin"
+      ? collection(db, "projects")
+      : query(collection(db, "projects"), where("companyId", "==", companyId));
+
+    const unsubProjects = onSnapshot(projectQuery, (snap) => {
       const list: Project[] = [];
       snap.forEach((d) => {
         list.push({ id: d.id, ...d.data() } as Project);
@@ -214,7 +239,12 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       setProjects(list);
     });
 
-    const unsubAccounts = onSnapshot(collection(db, "accounts"), (snap) => {
+    // 3. Role-based Accounts (Transactions) Query
+    const accountQuery = currentUser.role === "admin"
+      ? collection(db, "accounts")
+      : query(collection(db, "accounts"), where("companyId", "==", companyId));
+
+    const unsubAccounts = onSnapshot(accountQuery, (snap) => {
       const list: Transaction[] = [];
       snap.forEach((d) => {
         list.push({ id: d.id, ...d.data() } as Transaction);
@@ -224,7 +254,12 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       setTransactions(list);
     });
 
-    const unsubInstallments = onSnapshot(collection(db, "installments"), (snap) => {
+    // 4. Role-based Installments Query
+    const installmentQuery = currentUser.role === "admin"
+      ? collection(db, "installments")
+      : query(collection(db, "installments"), where("companyId", "==", companyId));
+
+    const unsubInstallments = onSnapshot(installmentQuery, (snap) => {
       const list: Installment[] = [];
       snap.forEach((d) => {
         list.push({ id: d.id, ...d.data() } as Installment);
@@ -233,14 +268,30 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       setLoading(false);
     });
 
-    const unsubAllHistory = onSnapshot(collectionGroup(db, "history"), (snap) => {
-      const list: (HistoryEntry & { userDocId: string })[] = [];
-      snap.forEach((d) => {
-        const parentUserDocId = d.ref.parent?.parent?.id || "";
-        list.push({ docId: d.id, userDocId: parentUserDocId, ...d.data() } as any);
+    // 5. Role-based History Query
+    let unsubAllHistory: () => void;
+    if (currentUser.role === "admin") {
+      unsubAllHistory = onSnapshot(collectionGroup(db, "history"), (snap) => {
+        const list: (HistoryEntry & { userDocId: string })[] = [];
+        snap.forEach((d) => {
+          const parentUserDocId = d.ref.parent?.parent?.id || "";
+          list.push({ docId: d.id, userDocId: parentUserDocId, ...d.data() } as any);
+        });
+        setAllHistories(list);
       });
-      setAllHistories(list);
-    });
+    } else if (currentUser.role === "member") {
+      // Member only loads their own history subcollection! Very fast!
+      unsubAllHistory = onSnapshot(collection(db, "users", currentUser.docId, "history"), (snap) => {
+        const list: (HistoryEntry & { userDocId: string })[] = [];
+        snap.forEach((d) => {
+          list.push({ docId: d.id, userDocId: currentUser.docId, ...d.data() } as any);
+        });
+        setAllHistories(list);
+      });
+    } else {
+      // Company role handles history subscription in a separate reactive useEffect below
+      unsubAllHistory = () => {};
+    }
 
     return () => {
       unsubUsers();
@@ -249,7 +300,34 @@ export default function DashboardView({ currentUser, onNavigate }: DashboardView
       unsubInstallments();
       unsubAllHistory();
     };
-  }, []);
+  }, [currentUser]);
+
+  // Live sync of all company members' histories for Company role
+  useEffect(() => {
+    if (currentUser.role !== "company") return;
+    if (users.length === 0) return;
+
+    // Filter company members
+    const companyMembers = users.filter((u) => u.role === "member" && u.companyId === currentUser.docId);
+
+    const unsubs = companyMembers.map((m) => {
+      return onSnapshot(collection(db, "users", m.docId, "history"), (snap) => {
+        setAllHistories((prev) => {
+          // Remove old history entries for this specific member
+          const filtered = prev.filter((h) => h.userDocId !== m.docId);
+          const newEntries: any[] = [];
+          snap.forEach((docSnap) => {
+            newEntries.push({ docId: docSnap.id, userDocId: m.docId, ...docSnap.data() });
+          });
+          return [...filtered, ...newEntries];
+        });
+      });
+    });
+
+    return () => {
+      unsubs.forEach((unsub) => unsub());
+    };
+  }, [users, currentUser]);
 
   useEffect(() => {
     if (users.length === 0) {
