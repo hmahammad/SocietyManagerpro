@@ -38,6 +38,11 @@ export interface User {
   planRequestMobile?: string;
   planRequestAmount?: number;
   planRequestAt?: number;
+  deviceLock?: boolean;
+  guardianRelation?: string;
+  guardianName?: string;
+  guardianNid?: string;
+  guardianAddress?: string;
 }
 
 export interface HistoryEntry {

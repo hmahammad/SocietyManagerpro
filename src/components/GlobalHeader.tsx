@@ -320,6 +320,16 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
                         </>
                       )}
 
+                      <button
+                        onClick={() => {
+                          setShowProfileMenu(false);
+                          onNavigate("settings");
+                        }}
+                        className="w-full text-left px-3.5 py-2 text-xs font-bold hover:bg-indigo-50 dark:hover:bg-slate-800 transition flex items-center gap-2 cursor-pointer text-indigo-600 dark:text-indigo-400 font-extrabold"
+                      >
+                        <Settings className="w-3.5 h-3.5 text-indigo-500" /> ফিটিংস ও সেটিংস (Settings)
+                      </button>
+
                       <hr className="my-1 border-slate-100 dark:border-slate-800" />
 
                       {/* Settings & Preferences Section */}

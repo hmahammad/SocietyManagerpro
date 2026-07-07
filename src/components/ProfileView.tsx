@@ -76,6 +76,12 @@ export default function ProfileView({ currentUser, targetId, onNavigate, totalEn
   const [role, setRole] = useState<"member" | "company" | "admin" | "">("");
   const [status, setStatus] = useState<"active" | "pending" | "request" | "deactive" | "">("");
 
+  // Guardian info state variables
+  const [guardianRelation, setGuardianRelation] = useState("");
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianNid, setGuardianNid] = useState("");
+  const [guardianAddress, setGuardianAddress] = useState("");
+
   // Company-only form states
   const [companyName, setCompanyName] = useState("");
   const [companyAddress, setCompanyAddress] = useState("");
@@ -84,10 +90,6 @@ export default function ProfileView({ currentUser, targetId, onNavigate, totalEn
   const [profilePic, setProfilePic] = useState("");
   const [idFrontUrl, setIdFrontUrl] = useState("");
   const [idBackUrl, setIdBackUrl] = useState("");
-
-  // Own Password change states
-  const [newPass, setNewPass] = useState("");
-  const [confirmPass, setConfirmPass] = useState("");
 
   // Lightbox modal state
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -142,6 +144,10 @@ export default function ProfileView({ currentUser, targetId, onNavigate, totalEn
           setCompanyAddress(d.companyAddress || "");
           setRole(d.role || "member");
           setStatus(d.status || "pending");
+          setGuardianRelation(d.guardianRelation || "");
+          setGuardianName(d.guardianName || "");
+          setGuardianNid(d.guardianNid || "");
+          setGuardianAddress(d.guardianAddress || "");
 
           if (d.role !== "company") {
             // Fetch history & calculate arrears
@@ -444,6 +450,10 @@ export default function ProfileView({ currentUser, targetId, onNavigate, totalEn
         idFrontUrl,
         idBackUrl,
         canSeeAllData,
+        guardianRelation: guardianRelation.trim(),
+        guardianName: guardianName.trim(),
+        guardianNid: guardianNid.trim(),
+        guardianAddress: guardianAddress.trim(),
       };
 
       if (role === "company" || targetUser.role === "company") {
@@ -664,33 +674,6 @@ export default function ProfileView({ currentUser, targetId, onNavigate, totalEn
       showToast("❌ রিকোয়েস্ট বাতিল করা যায়নি", "error");
     } finally {
       setBillingSubmitting(false);
-    }
-  };
-
-  const handleChangePassword = async () => {
-    if (!newPass || newPass.length < 6) {
-      showToast("❌ পাসওয়ার্ড কমপক্ষে ৬ অক্ষর হতে হবে", "error");
-      return;
-    }
-    if (newPass !== confirmPass) {
-      showToast("❌ পাসওয়ার্ড দুটো মিলছে না", "error");
-      return;
-    }
-
-    try {
-      const user = auth.currentUser;
-      if (user) {
-        await updatePassword(user, newPass);
-        setNewPass("");
-        setConfirmPass("");
-        showToast("✅ পাসওয়ার্ড সফলভাবে পরিবর্তন হয়েছে");
-      }
-    } catch (e: any) {
-      if (e.code === "auth/requires-recent-login") {
-        showToast("❌ নিরাপত্তার জন্য আবার লগইন করে পাসওয়ার্ড বদলান", "error");
-      } else {
-        showToast("❌ পাসওয়ার্ড পরিবর্তন হয়নি: " + e.message, "error");
-      }
     }
   };
 
@@ -1399,6 +1382,70 @@ export default function ProfileView({ currentUser, targetId, onNavigate, totalEn
               />
             </div>
 
+            {role !== "company" && (
+              <div className="border-t border-slate-100 pt-4 mt-2 space-y-3">
+                <span className="text-[10px] font-extrabold text-indigo-600 block uppercase tracking-wide">
+                  👥 অভিভাবকের তথ্য (Guardian Information)
+                </span>
+
+                <div>
+                  <label className="text-[9px] font-semibold text-slate-500 mb-1 ml-1 block">অভিভাবকের নাম</label>
+                  <input
+                    type="text"
+                    disabled={!editable}
+                    value={guardianName}
+                    onChange={(e) => setGuardianName(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-semibold focus:bg-white focus:border-indigo-500 disabled:opacity-75"
+                    placeholder="অভিভাবকের নাম"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] font-semibold text-slate-500 mb-1 ml-1 block">অভিভাবকের সাথে সম্পর্ক</label>
+                    <select
+                      disabled={!editable}
+                      value={guardianRelation}
+                      onChange={(e) => setGuardianRelation(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl font-semibold text-xs focus:bg-white focus:border-indigo-500 disabled:opacity-75"
+                    >
+                      <option value="">নির্বাচন করুন</option>
+                      <option value="পিতা">পিতা</option>
+                      <option value="মাতা">মাতা</option>
+                      <option value="স্বামী">স্বামী</option>
+                      <option value="স্ত্রী">স্ত্রী</option>
+                      <option value="ভাই">ভাই</option>
+                      <option value="বোন">বোন</option>
+                      <option value="অন্যান্য">অন্যান্য</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-semibold text-slate-500 mb-1 ml-1 block">অভিভাবকের এনআইডি নম্বর</label>
+                    <input
+                      type="text"
+                      disabled={!editable}
+                      value={guardianNid}
+                      onChange={(e) => setGuardianNid(e.target.value.replace(/\D/g, "").slice(0, 17))}
+                      className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl text-xs font-semibold focus:bg-white focus:border-indigo-500 disabled:opacity-75"
+                      placeholder="১০-১৭ ডিজিট"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-semibold text-slate-500 mb-1 ml-1 block">অভিভাবকের ঠিকানা</label>
+                  <textarea
+                    disabled={!editable}
+                    value={guardianAddress}
+                    onChange={(e) => setGuardianAddress(e.target.value)}
+                    rows={2}
+                    className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl text-xs font-semibold focus:bg-white focus:border-indigo-500 disabled:opacity-75 resize-none"
+                    placeholder="অভিভাবকের বিস্তারিত ঠিকানা..."
+                  />
+                </div>
+              </div>
+            )}
+
             {/* NID Documents */}
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div className="text-center p-3 border-2 border-dashed border-slate-200 rounded-2xl relative">
@@ -1451,37 +1498,6 @@ export default function ProfileView({ currentUser, targetId, onNavigate, totalEn
             </div>
           </div>
         </div>
-
-        {/* Change password only for own profile */}
-        {isOwnProfile && (
-          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4 mb-5">
-            <span className="text-[11px] font-bold text-indigo-600 block uppercase tracking-wide">
-              🔒 পাসওয়ার্ড পরিবর্তন
-            </span>
-            <div className="space-y-3 mt-3">
-              <input
-                type="password"
-                value={newPass}
-                onChange={(e) => setNewPass(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-semibold focus:bg-white focus:border-indigo-500 outline-none"
-                placeholder="নতুন পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)"
-              />
-              <input
-                type="password"
-                value={confirmPass}
-                onChange={(e) => setConfirmPass(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs font-semibold focus:bg-white focus:border-indigo-500 outline-none"
-                placeholder="পাসওয়ার্ড নিশ্চিত করুন"
-              />
-              <button
-                onClick={handleChangePassword}
-                className="w-full py-3 rounded-2xl border-2 border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition flex items-center justify-center gap-2"
-              >
-                <Key className="w-4 h-4" /> পাসওয়ার্ড পরিবর্তন করুন
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Status Message for Requested or Pending Profile */}
         {isOwnProfile && role === "company" && status === "request" && (

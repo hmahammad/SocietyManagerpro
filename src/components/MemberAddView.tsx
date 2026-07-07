@@ -3,7 +3,7 @@ import { doc, setDoc, runTransaction, collection, query, where, getDocs, addDoc 
 import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { db, secondaryAuth } from "../firebase";
 import { User } from "../types";
-import { ArrowLeft, UserPlus, Eye, EyeOff, Camera, Landmark } from "lucide-react";
+import { ArrowLeft, UserPlus, Eye, EyeOff, Camera, Landmark, Users, MapPin } from "lucide-react";
 import { normalizePhoneNumber } from "../utils/firestore";
 
 interface MemberAddViewProps {
@@ -30,6 +30,12 @@ export default function MemberAddView({ currentUser, onNavigate, totalEntries = 
   const [confirmPassword, setConfirmPassword] = useState("");
   const [nidType, setNidType] = useState("NID");
   const [nidNumber, setNidNumber] = useState("");
+
+  // Guardian info state variables
+  const [guardianRelation, setGuardianRelation] = useState("");
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianNid, setGuardianNid] = useState("");
+  const [guardianAddress, setGuardianAddress] = useState("");
 
   const [showPass, setShowPass] = useState(false);
   const [showConfirmPass, setShowConfirmPass] = useState(false);
@@ -203,6 +209,10 @@ export default function MemberAddView({ currentUser, onNavigate, totalEntries = 
         savingsBalance: investAmount,
         incomeBalance: 0,
         createdAt: Date.now(),
+        guardianRelation: guardianRelation,
+        guardianName: guardianName,
+        guardianNid: guardianNid,
+        guardianAddress: guardianAddress,
       });
 
       // Write starting history if investAmount > 0
@@ -330,6 +340,69 @@ export default function MemberAddView({ currentUser, onNavigate, totalEntries = 
                 value={dob}
                 onChange={(e) => setDob(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none text-sm font-medium transition focus:border-blue-400"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Guardian Information */}
+        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4 animate-fadeIn">
+          <p className="text-xs font-bold uppercase tracking-wider text-indigo-600 border-b pb-2 flex items-center gap-1.5">
+            <Users className="w-4 h-4 text-indigo-500 animate-pulse" />
+            👥 অভিভাবকের তথ্য (Guardian Information)
+          </p>
+
+          <div className="space-y-3.5">
+            <div>
+              <label className="block text-xs text-slate-600 font-semibold mb-1">অভিভাবকের নাম</label>
+              <input
+                type="text"
+                value={guardianName}
+                onChange={(e) => setGuardianName(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none text-sm font-medium transition focus:border-blue-400"
+                placeholder="যেমন: মোঃ আবদুর রহমান"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-slate-600 font-semibold mb-1">অভিভাবকের সাথে সম্পর্ক</label>
+                <select
+                  value={guardianRelation}
+                  onChange={(e) => setGuardianRelation(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none text-sm font-medium transition bg-white focus:border-blue-400"
+                >
+                  <option value="">নির্বাচন করুন</option>
+                  <option value="পিতা">পিতা (Father)</option>
+                  <option value="মাতা">মাতা (Mother)</option>
+                  <option value="স্বামী">স্বামী (Husband)</option>
+                  <option value="স্ত্রী">স্ত্রী (Wife)</option>
+                  <option value="ভাই">ভাই (Brother)</option>
+                  <option value="বোন">বোন (Sister)</option>
+                  <option value="অন্যান্য">অন্যান্য (Other)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-600 font-semibold mb-1">অভিভাবকের এন আই ডি নাম্বার</label>
+                <input
+                  type="text"
+                  value={guardianNid}
+                  onChange={(e) => setGuardianNid(e.target.value.replace(/\D/g, "").slice(0, 17))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none text-sm font-medium transition focus:border-blue-400"
+                  placeholder="১০-১৭ ডিজিট"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-slate-600 font-semibold mb-1">অভিভাবকের ঠিকানা</label>
+              <textarea
+                value={guardianAddress}
+                onChange={(e) => setGuardianAddress(e.target.value)}
+                rows={2}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none text-sm font-medium transition focus:border-blue-400 resize-none"
+                placeholder="অভিভাবকের বিস্তারিত ঠিকানা লিখুন..."
               />
             </div>
           </div>

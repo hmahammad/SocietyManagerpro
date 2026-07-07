@@ -45,6 +45,9 @@ import {
   LogOut,
   Paperclip,
   Upload,
+  Coins,
+  PiggyBank,
+  CreditCard,
 } from "lucide-react";
 
 const writtenArrearsKeysGlobal = new Set<string>();
@@ -889,6 +892,9 @@ export default function DashboardView({ currentUser, onNavigate, navigationParam
         totalIncome: calc.income,
         totalBalance: myBalance,
         totalDue: myDue,
+        savingsBalance: calc.savingsBalance,
+        investBalance: calc.investBalance,
+        incomeBalance: calc.incomeBalance,
         globalTotalDeposit,
         globalTotalExpense: totalExpense,
         globalTotalIncome: totalIncome,
@@ -902,6 +908,9 @@ export default function DashboardView({ currentUser, onNavigate, navigationParam
       totalIncome,
       totalBalance,
       totalDue,
+      savingsBalance: 0,
+      investBalance: 0,
+      incomeBalance: 0,
       globalTotalDeposit,
       globalTotalExpense: totalExpense,
       globalTotalIncome: totalIncome,
@@ -915,6 +924,9 @@ export default function DashboardView({ currentUser, onNavigate, navigationParam
     totalIncome,
     totalBalance,
     totalDue,
+    savingsBalance,
+    investBalance,
+    incomeBalance,
     globalTotalDeposit,
     globalTotalExpense,
     globalTotalIncome,
@@ -1949,30 +1961,71 @@ export default function DashboardView({ currentUser, onNavigate, navigationParam
       <div className="px-4 mt-1">
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-4">
           <div className="grid grid-cols-2 gap-3.5">
-            {currentUser.role === "member" && !currentUser.canSeeAllData ? (
-              <>
-                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
-                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">মোট জমা (ডিপোজিট)</p>
-                  <p className="text-blue-600 font-bold text-sm mt-0.5">৳{formatNum(totalDeposit)}</p>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
-                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">সক্রিয় ব্যালেন্স</p>
-                  <p className="text-blue-600 font-bold text-sm mt-0.5">৳{formatNum(totalBalance)}</p>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
-                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">শেয়ার ইনভেস্টমেন্ট (খরচ)</p>
-                  <p className="text-rose-500 font-bold text-sm mt-0.5">৳{formatNum(totalExpense)}</p>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
-                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">শেয়ার লভ্যাংশ (আয়)</p>
-                  <p className="text-emerald-600 font-bold text-sm mt-0.5">৳{formatNum(totalIncome)}</p>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center col-span-2">
-                  <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">মোট সম্পদ (নেট মূল্য)</p>
-                  <p className="text-emerald-600 font-bold text-sm mt-0.5">৳{formatNum(totalBalance + totalIncome)}</p>
-                </div>
-              </>
-            ) : (
+            {currentUser.role === "member" && !currentUser.canSeeAllData ? (() => {
+              const mySavingsArrears = allHistories
+                .filter((h) => h.userDocId === currentUser.docId && h.type === "savings_arrears")
+                .reduce((sum, h) => sum + Number(h.arrears || 0), 0);
+              return (
+                <>
+                  {/* সেভিংস ব্যালেন্স */}
+                  <div className="bg-emerald-50/40 border border-emerald-100 p-3.5 rounded-2xl flex items-center gap-3 shadow-sm hover:shadow-md transition duration-200">
+                    <div className="p-2 bg-emerald-100 rounded-xl text-emerald-700 shrink-0">
+                      <PiggyBank className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-black tracking-wider">সেভিংস ব্যালেন্স</p>
+                      <p className="text-emerald-700 font-extrabold text-base mt-0.5">৳{formatNum(savingsBalance || 0)}</p>
+                    </div>
+                  </div>
+
+                  {/* ইনভেস্ট ব্যালেন্স */}
+                  <div className="bg-blue-50/40 border border-blue-100 p-3.5 rounded-2xl flex items-center gap-3 shadow-sm hover:shadow-md transition duration-200">
+                    <div className="p-2 bg-blue-100 rounded-xl text-blue-700 shrink-0">
+                      <Coins className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-black tracking-wider">ইনভেস্ট ব্যালেন্স</p>
+                      <p className="text-blue-700 font-extrabold text-base mt-0.5">৳{formatNum(investBalance || 0)}</p>
+                    </div>
+                  </div>
+
+                  {/* ইনকাম ব্যালেন্স */}
+                  <div className="bg-indigo-50/40 border border-indigo-100 p-3.5 rounded-2xl flex items-center gap-3 shadow-sm hover:shadow-md transition duration-200">
+                    <div className="p-2 bg-indigo-100 rounded-xl text-indigo-700 shrink-0">
+                      <TrendingUp className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-black tracking-wider">ইনকাম ব্যালেন্স</p>
+                      <p className="text-indigo-700 font-extrabold text-base mt-0.5">৳{formatNum(incomeBalance || 0)}</p>
+                    </div>
+                  </div>
+
+                  {/* কিস্তি প্রক্রিয়া */}
+                  <div className="bg-rose-50/40 border border-rose-100 p-3.5 rounded-2xl flex items-center gap-3 shadow-sm hover:shadow-md transition duration-200">
+                    <div className="p-2 bg-rose-100 rounded-xl text-rose-700 shrink-0">
+                      <CreditCard className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-black tracking-wider">কিস্তি প্রক্রিয়া</p>
+                      <p className="text-rose-700 font-extrabold text-base mt-0.5">৳{formatNum(totalDue || 0)}</p>
+                      {totalDue > 0 && <span className="text-[8px] font-bold text-rose-600 bg-rose-100/60 px-1.5 py-0.2 rounded mt-0.5 inline-block">বকেয়া</span>}
+                    </div>
+                  </div>
+
+                  {/* সেভিংস বকেয়া */}
+                  <div className="bg-amber-50/40 border border-amber-100 p-3.5 rounded-2xl flex items-center gap-3 shadow-sm hover:shadow-md transition duration-200 col-span-2">
+                    <div className="p-2 bg-amber-100 rounded-xl text-amber-700 shrink-0">
+                      <AlertCircle className="w-5 h-5 animate-pulse" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-black tracking-wider">সেভিংস বকেয়া</p>
+                      <p className="text-amber-700 font-extrabold text-base mt-0.5">৳{formatNum(mySavingsArrears || 0)}</p>
+                      {mySavingsArrears > 0 && <span className="text-[8px] font-bold text-amber-600 bg-amber-100/60 px-1.5 py-0.2 rounded mt-0.5 inline-block">বকেয়া কিস্তি পরিশোধযোগ্য</span>}
+                    </div>
+                  </div>
+                </>
+              );
+            })() : (
               <>
                 <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center flex flex-col justify-center">
                   <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">মোট ইনভেস্ট</p>

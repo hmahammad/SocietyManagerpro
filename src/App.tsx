@@ -13,9 +13,11 @@ import GlobalSlider from "./components/GlobalSlider";
 import ArrearsView from "./components/ArrearsView";
 import NotificationsView from "./components/NotificationsView";
 import TransactionsView from "./components/TransactionsView";
+import SettingsView from "./components/SettingsView";
+import ActivityView from "./components/ActivityView";
 import { motion, AnimatePresence } from "motion/react";
 
-type RouteView = "login" | "dashboard" | "member-list" | "member-add" | "profile" | "arrears" | "notifications" | "transactions";
+type RouteView = "login" | "dashboard" | "member-list" | "member-add" | "profile" | "arrears" | "notifications" | "transactions" | "settings" | "activity";
 
 export default function App() {
   const [authStateLoading, setAuthStateLoading] = useState(true);
@@ -330,6 +332,24 @@ export default function App() {
 
           {currentView === "transactions" && (
             <TransactionsView
+              currentUser={currentUser}
+              onNavigate={handleNavigate}
+            />
+          )}
+
+          {currentView === "settings" && (
+            <SettingsView
+              currentUser={currentUser}
+              onNavigate={handleNavigate}
+              language={language}
+              setLanguage={setLanguage}
+              theme={theme}
+              setTheme={setTheme}
+            />
+          )}
+
+          {currentView === "activity" && (
+            <ActivityView
               currentUser={currentUser}
               onNavigate={handleNavigate}
             />
