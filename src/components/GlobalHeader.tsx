@@ -13,9 +13,10 @@ interface GlobalHeaderProps {
   setLanguage?: (lang: Language) => void;
   theme?: "light" | "dark";
   setTheme?: (theme: "light" | "dark") => void;
+  isNavVisible?: boolean;
 }
 
-export default function GlobalHeader({ currentUser, currentView, onNavigate, language = "bn", setLanguage, theme = "light", setTheme }: GlobalHeaderProps) {
+export default function GlobalHeader({ currentUser, currentView, onNavigate, language = "bn", setLanguage, theme = "light", setTheme, isNavVisible = true }: GlobalHeaderProps) {
   const t = translations[language];
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -116,22 +117,22 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 shadow-sm font-sans select-none transition-colors">
+    <header className="sticky top-0 z-50 bg-white dark:bg-slate-900 border-b border-slate-150 dark:border-slate-850 shadow-sm font-sans select-none transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-12 items-center">
+        <div className="flex justify-between h-16 items-center">
           {/* Left: Brand logo & name */}
           <div 
             onClick={() => isActiveOrAdmin && onNavigate("dashboard")}
-            className="flex items-center gap-2 cursor-pointer active:scale-95 transition animate-fadeIn"
+            className="flex items-center gap-2.5 cursor-pointer active:scale-95 transition animate-fadeIn"
           >
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md">
-              <Building2 className="w-4.5 h-4.5" />
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+              <Building2 className="w-5.5 h-5.5" />
             </div>
             <div>
-              <span className="font-extrabold text-xs sm:text-sm text-slate-800 dark:text-slate-100 tracking-tight block">
+              <span className="font-black text-sm sm:text-base text-slate-800 dark:text-slate-100 tracking-tight block">
                 {displayCompanyName || currentUser.companyName || (language === "bn" ? "সোসাইটি ম্যানেজার" : "Society Manager")}
               </span>
-              <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold block -mt-0.5">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold block -mt-0.5 uppercase tracking-wide">
                 {currentUser.name} ({currentUser.role === "admin" ? t.admin : currentUser.role === "company" ? t.company : t.member})
               </span>
             </div>
@@ -224,14 +225,14 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
             {isActiveOrAdmin && (
               <button
                 onClick={() => onNavigate("notifications")}
-                className={`w-8 h-8 rounded-full flex items-center justify-center border transition relative cursor-pointer active:scale-95 shrink-0 ${
+                className={`w-10 h-10 rounded-full flex items-center justify-center border transition relative cursor-pointer active:scale-95 shrink-0 ${
                   currentView === "notifications"
                     ? "bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400"
                     : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                 }`}
                 title={t.notifications}
               >
-                <Bell className="w-4 h-4" />
+                <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-rose-600 text-white font-black text-[8px] min-w-[16px] h-[16px] px-1 rounded-full flex items-center justify-center border border-white dark:border-slate-900 shadow-md animate-bounce">
                     {unreadCount}
@@ -243,7 +244,7 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
             <div className="relative">
               <button
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="w-8 h-8 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 shadow-sm active:scale-95 transition cursor-pointer shrink-0"
+                className="w-10 h-10 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 shadow-sm active:scale-95 transition cursor-pointer shrink-0"
               >
                 <img
                   src={currentUser.profilePic || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=2563eb&color=fff`}
@@ -421,7 +422,9 @@ export default function GlobalHeader({ currentUser, currentView, onNavigate, lan
 
         {/* Fixed Mobile Bottom Navigation Bar */}
         {isActiveOrAdmin && (
-          <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-white/95 backdrop-blur-md border-t border-slate-150 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] pb-safe">
+          <div className={`fixed bottom-0 left-0 right-0 z-50 md:hidden bg-white/95 backdrop-blur-md border-t border-slate-150 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] pb-safe transition-all duration-300 transform ${
+            isNavVisible ? "translate-y-0 opacity-100" : "translate-y-full opacity-0 pointer-events-none"
+          }`}>
             <div className="flex items-center justify-around h-14 px-1 relative">
               <button
                 onClick={() => onNavigate("dashboard")}

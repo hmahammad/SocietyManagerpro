@@ -85,11 +85,12 @@ interface DashboardViewProps {
   onNavigate: (view: string, params?: any) => void;
   navigationParams?: any;
   totalEntries?: number;
+  isNavVisible?: boolean;
 }
 
 type TabMode = "invest" | "projects" | "ledger";
 
-export default function DashboardView({ currentUser, onNavigate, navigationParams, totalEntries = 0 }: DashboardViewProps) {
+export default function DashboardView({ currentUser, onNavigate, navigationParams, totalEntries = 0, isNavVisible = true }: DashboardViewProps) {
   const [activeTab, setActiveTab] = useState<TabMode>("invest");
   const [loading, setLoading] = useState(true);
 
@@ -2261,7 +2262,9 @@ export default function DashboardView({ currentUser, onNavigate, navigationParam
       {isCompanyOrAdmin && (
         <button
           onClick={handleFabClick}
-          className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-full shadow-2xl flex items-center justify-center font-bold text-2xl transition active:scale-95 z-40 cursor-pointer"
+          className={`fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-full shadow-2xl flex items-center justify-center font-bold text-2xl transition-all duration-300 active:scale-95 z-40 cursor-pointer ${
+            isNavVisible ? "hidden md:flex" : "flex animate-fadeIn"
+          }`}
         >
           <Plus className="w-6 h-6" />
         </button>

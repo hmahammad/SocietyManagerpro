@@ -814,7 +814,7 @@ export default function ProfileView({ currentUser, targetId, onNavigate, totalEn
             <p className="text-[11px] text-amber-700 leading-relaxed font-semibold">
               সমিতি ম্যানেজারের ড্যাশবোর্ড অ্যাক্টিভেশন রিকোয়েস্ট পাঠাতে নিচের সকল তথ্য পূরণ করা বাধ্যতামূলক:
             </p>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] text-slate-600 pt-1 border-t border-amber-200/50">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] text-slate-600 pt-1 border-t border-amber-200/50 font-medium">
               <div className="flex items-center gap-1.5">
                 <span className={`text-xs ${companyName.trim() ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}`}>
                   {companyName.trim() ? "✓" : "○"}
@@ -855,242 +855,50 @@ export default function ProfileView({ currentUser, targetId, onNavigate, totalEn
                 <span className={`text-xs ${nidNumber.trim() ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}`}>
                   {nidNumber.trim() ? "✓" : "○"}
                 </span>
-                <span className={nidNumber.trim() ? "text-slate-700 font-medium" : "text-slate-400"}>ডকুমেন্ট নম্বর</span>
+                <span className={nidNumber.trim() ? "text-slate-700 font-medium" : "text-slate-400"}>এনআইডি নম্বর</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className={`text-xs ${profilePic ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}`}>
                   {profilePic ? "✓" : "○"}
                 </span>
-                <span className={profilePic ? "text-slate-700 font-medium" : "text-slate-400"}>কোম্পানি লোগো / ছবি</span>
+                <span className={profilePic ? "text-slate-700 font-medium" : "text-slate-400"}>প্রোফাইল ছবি</span>
               </div>
-              <div className="flex items-center gap-1.5 col-span-2">
+              <div className="flex items-center gap-1.5">
                 <span className={`text-xs ${idFrontUrl ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}`}>
                   {idFrontUrl ? "✓" : "○"}
                 </span>
-                <span className={idFrontUrl ? "text-slate-700 font-medium" : "text-slate-400"}>পরিচয়পত্র/ট্রেড লাইসেন্স ডকুমেন্ট (সামনে)</span>
+                <span className={idFrontUrl ? "text-slate-700 font-medium" : "text-slate-400"}>NID সামনে</span>
               </div>
-              <div className="flex items-center gap-1.5 col-span-2">
+              <div className="flex items-center gap-1.5">
                 <span className={`text-xs ${idBackUrl ? "text-emerald-500 font-bold" : "text-amber-500 font-bold"}`}>
                   {idBackUrl ? "✓" : "○"}
                 </span>
-                <span className={idBackUrl ? "text-slate-700 font-medium" : "text-slate-400"}>পরিচয়পত্র/ট্রেড লাইসেন্স ডকুমেন্ট (পিছনে)</span>
+                <span className={idBackUrl ? "text-slate-700 font-medium" : "text-slate-400"}>NID পিছনে</span>
               </div>
             </div>
           </div>
         )}
 
-        {/* Admin Control Panel (Only visible to Admin) */}
-        {currentUser.role === "admin" && (
-          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-5 rounded-3xl shadow-lg border border-indigo-500/20 space-y-4 mb-4">
-            <span className="text-[11px] font-bold text-indigo-400 block uppercase tracking-wide">
-              🛡️ অ্যাডমিন নিয়ন্ত্রণ প্যানেল (Admin Controls)
-            </span>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] font-bold text-slate-300 mb-1 ml-1 block">👥 ব্যবহারকারী রোল</label>
-                <select
-                  value={role}
-                  onChange={(e: any) => setRole(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white px-3 py-2.5 rounded-xl font-semibold text-xs outline-none focus:border-indigo-400"
-                >
-                  <option value="member">মেম্বার (Member)</option>
-                  <option value="company">কোম্পানি (Company)</option>
-                  <option value="admin">অ্যাডমিন (Admin)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-slate-300 mb-1 ml-1 block">⚙️ অ্যাকাউন্ট স্ট্যাটাস</label>
-                <select
-                  value={status}
-                  onChange={(e: any) => setStatus(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white px-3 py-2.5 rounded-xl font-semibold text-xs outline-none focus:border-indigo-400"
-                >
-                  <option value="active">সক্রিয় (Active)</option>
-                  <option value="pending">পেন্ডিং (Pending)</option>
-                  <option value="request">রিকোয়েস্ট (Request)</option>
-                  <option value="deactive">নিষ্ক্রিয় (Deactive)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Financial Summary Section for Members */}
-        {role !== "company" && targetUser && (
-          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4 mb-4">
+        {/* Account Status Setting - Only visible to Admin or Company if editing someone else's profile */}
+        {isAdminOrCompany && !isOwnProfile && (
+          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-3 mb-4">
             <span className="text-[11px] font-bold text-indigo-600 block uppercase tracking-wide">
-              💰 আর্থিক সারসংক্ষেপ
+              ⚙️ অ্যাকাউন্ট স্ট্যাটাস
             </span>
-            <div className="grid grid-cols-2 gap-3 mt-3">
-              <div className="bg-emerald-50 rounded-2xl p-3 text-center">
-                <p className="text-[9px] font-bold text-emerald-600 uppercase mb-1">সেভিংস ব্যালেন্স</p>
-                <p className="text-xl font-bold text-emerald-700">৳{formatBDT(targetUser.savingsBalance !== undefined ? targetUser.savingsBalance : (targetUser.amount || 0))}</p>
-              </div>
-              <div className="bg-indigo-50 rounded-2xl p-3 text-center">
-                <p className="text-[9px] font-bold text-indigo-600 uppercase mb-1">ইনভেস্ট ব্যালেন্স</p>
-                <p className="text-xl font-bold text-indigo-700">৳{formatBDT(targetUser.investBalance || 0)}</p>
-              </div>
-              <div className="bg-blue-50 rounded-2xl p-3 text-center">
-                <p className="text-[9px] font-bold text-blue-600 uppercase mb-1">ইনকাম ব্যালেন্স</p>
-                <p className="text-xl font-bold text-blue-700">৳{formatBDT(targetUser.incomeBalance || 0)}</p>
-              </div>
-              <div className="bg-rose-50 rounded-2xl p-3 text-center">
-                <p className="text-[9px] font-bold text-rose-600 uppercase mb-1">সঞ্চয় বকেয়া</p>
-                <p className="text-xl font-bold text-rose-700">৳{formatBDT(totalArrears)}</p>
-              </div>
-            </div>
-
-            <div className="flex gap-1.5 flex-wrap mt-3">
-              {targetUser.accountType && (
-                <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-3 py-1 rounded-full">
-                  {ACCT_LABELS[targetUser.accountType]}
-                </span>
-              )}
-              {targetUser.InvestType && (
-                <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-3 py-1 rounded-full">
-                  {INVEST_LABELS[targetUser.InvestType]}
-                </span>
-              )}
-              {targetUser.investDate && (
-                <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-3 py-1 rounded-full">
-                  জমার তারিখ: {targetUser.investDate}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* History Log List for Members */}
-        {role !== "company" && (
-          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4 mb-4">
-            {/* Elegant Sub-tabs */}
-            <div className="flex bg-slate-100 p-1.5 rounded-2xl">
-              <button
-                onClick={() => setSavingsTab("schedule")}
-                className={`flex-1 py-2 text-center text-xs font-bold rounded-xl transition ${
-                  savingsTab === "schedule" ? "bg-white text-indigo-600 shadow-xs" : "text-slate-400 hover:text-slate-600"
-                }`}
+            <div>
+              <label className="text-[10px] font-bold text-indigo-500 mb-1 ml-1 block">স্ট্যাটাস নির্ধারণ করুন</label>
+              <select
+                disabled={!editable}
+                value={status}
+                onChange={(e: any) => setStatus(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl font-semibold text-xs outline-none focus:bg-white focus:border-indigo-500 disabled:opacity-75 disabled:cursor-not-allowed"
               >
-                📅 সেভিংস সিডিউল (Schedule)
-              </button>
-              <button
-                onClick={() => setSavingsTab("history")}
-                className={`flex-1 py-2 text-center text-xs font-bold rounded-xl transition ${
-                  savingsTab === "history" ? "bg-white text-indigo-600 shadow-xs" : "text-slate-400 hover:text-slate-600"
-                }`}
-              >
-                📋 জমার ইতিহাস (History)
-              </button>
+                <option value="active">সক্রিয় (Active)</option>
+                <option value="pending">পেন্ডিং (Pending)</option>
+                <option value="request">রিকোয়েস্ট (Request)</option>
+                <option value="deactive">নিষ্ক্রিয় (Deactive)</option>
+              </select>
             </div>
-
-            {savingsTab === "schedule" ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between border-b pb-1.5">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-                    সঞ্চয় জমার তালিকা ও স্থিতি
-                  </span>
-                  <span className="text-[9px] bg-indigo-50 text-indigo-600 font-extrabold px-2 py-0.5 rounded-full">
-                    মোট সঞ্চয়
-                  </span>
-                </div>
-                {getSavingsSchedule().length === 0 ? (
-                  <p className="text-center text-slate-400 text-xs py-6">কোনো সেভিংস সিডিউল পাওয়া যায়নি (সঞ্চয়ের ধরণ ও তারিখ সঠিক নয়)</p>
-                ) : (
-                  <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto pr-1 space-y-2">
-                    {getSavingsSchedule().map((item, index) => {
-                      return (
-                        <div key={index} className="flex justify-between items-center py-2">
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-bold text-slate-800">{item.label}</span>
-                              {item.status === "paid" && (
-                                <span className="text-[8px] bg-emerald-100 text-emerald-700 font-extrabold px-1.5 py-0.5 rounded-sm">
-                                  পরিশোধিত
-                                </span>
-                              )}
-                              {item.status === "overdue" && (
-                                <span className="text-[8px] bg-rose-100 text-rose-700 font-extrabold px-1.5 py-0.5 rounded-sm">
-                                  বকেয়া
-                                </span>
-                              )}
-                              {item.status === "upcoming" && (
-                                <span className="text-[8px] bg-blue-100 text-blue-700 font-extrabold px-1.5 py-0.5 rounded-sm">
-                                  আসন্ন
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[9px] text-slate-400 mt-0.5">
-                              জমার দিন: প্রতি মাসের {item.dayOfMonth} তারিখ
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <span className={`text-xs font-bold block ${item.status === "paid" ? "text-emerald-600" : item.status === "overdue" ? "text-rose-600" : "text-slate-600"}`}>
-                              ৳{formatBDT(item.amount)}
-                            </span>
-                            {item.payment?.date && (
-                              <span className="text-[8px] text-slate-400 block font-mono">
-                                জমা: {formatDate(item.payment.date)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div>
-                <div className="flex items-center justify-between border-b pb-2">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-                    লেনদেন ও জমার রসিদ সমূহ
-                  </span>
-                  <span className="text-[10px] bg-indigo-100 text-indigo-600 font-bold px-2.5 py-0.5 rounded-full">
-                    {history.length} টি
-                  </span>
-                </div>
-                {history.length === 0 ? (
-                  <p className="text-center text-slate-400 text-xs py-6">এখনো কোনো জমা নেই</p>
-                ) : (
-                  <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto pr-1">
-                    {history.map((h) => {
-                      const isArrears = h.type === "savings_arrears";
-                      const amt = isArrears ? Number(h.arrears || 0) : Number(h.amount || 0);
-
-                      return (
-                        <div key={h.docId} className="flex justify-between items-center py-2.5">
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <span className={`text-xs font-bold ${isArrears ? "text-rose-600" : "text-slate-800"}`}>
-                                {isArrears ? "বকেয়া " : ""}৳{formatBDT(amt)}
-                              </span>
-                              {!isArrears && h.InvestType && (
-                                <span className="text-[8px] bg-slate-100 text-slate-500 font-extrabold px-1.5 py-0.5 rounded-sm uppercase">
-                                  {INVEST_LABELS[h.InvestType] || h.InvestType}
-                                </span>
-                              )}
-                              {isArrears && (
-                                <span className="text-[8px] bg-rose-100 text-rose-600 font-extrabold px-1.5 py-0.5 rounded-sm uppercase">
-                                  বকেয়া
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(h.date)}</p>
-                            {h.memo && h.memo !== "N/A" && (
-                              <p className="text-[9px] text-slate-500 mt-0.5 truncate max-w-[200px]">{h.memo}</p>
-                            )}
-                          </div>
-                          <div className={`font-bold text-sm ${isArrears ? "text-rose-400" : "text-emerald-500"}`}>
-                            {isArrears ? <AlertTriangle className="w-4 h-4" /> : "↑"}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
 
@@ -1158,22 +966,24 @@ export default function ProfileView({ currentUser, targetId, onNavigate, totalEn
               </div>
             </div>
 
-            {/* Data View Permission Setting */}
-            <div className="pt-3 border-t border-slate-100">
-              <label className="text-[10px] font-bold text-indigo-500 mb-1 ml-1 block">👁️ ডাটা ভিউ পারমিশন (Data View Permission)</label>
-              <select
-                disabled={!editable}
-                value={canSeeAllData ? "all" : "self"}
-                onChange={(e: any) => setCanSeeAllData(e.target.value === "all")}
-                className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl font-semibold text-xs outline-none focus:bg-white focus:border-indigo-500 disabled:opacity-75 disabled:cursor-not-allowed"
-              >
-                <option value="self">শুধু নিজের ডাটা দেখতে পারবে (Show Only Own Data)</option>
-                <option value="all">সকল মেম্বারদের ডাটা দেখতে পারবে (Show All Members' Data)</option>
-              </select>
-              <p className="text-[9px] text-slate-400 font-bold mt-1.5 ml-1 leading-normal">
-                মেম্বার ড্যাশবোর্ডে ও সদস্য তালিকায় অন্য সদস্যদের ডাটা দেখতে পারবে কিনা তা এখান থেকে নির্ধারণ করা যাবে।
-              </p>
-            </div>
+            {/* Data View Permission Setting - Only visible to Admin or Company when editing a member profile */}
+            {isAdminOrCompany && (
+              <div className="pt-3 border-t border-slate-100">
+                <label className="text-[10px] font-bold text-indigo-500 mb-1 ml-1 block">👁️ ডাটা ভিউ পারমিশন (Data View Permission)</label>
+                <select
+                  disabled={!editable}
+                  value={canSeeAllData ? "all" : "self"}
+                  onChange={(e: any) => setCanSeeAllData(e.target.value === "all")}
+                  className="w-full bg-slate-50 border border-slate-200 px-3 py-2.5 rounded-xl font-semibold text-xs outline-none focus:bg-white focus:border-indigo-500 disabled:opacity-75 disabled:cursor-not-allowed"
+                >
+                  <option value="self">শুধু নিজের ডাটা দেখতে পারবে (Show Only Own Data)</option>
+                  <option value="all">সকল মেম্বারদের ডাটা দেখতে পারবে (Show All Members' Data)</option>
+                </select>
+                <p className="text-[9px] text-slate-400 font-bold mt-1.5 ml-1 leading-normal">
+                  মেম্বার ড্যাশবোর্ডে ও সদস্য তালিকায় অন্য সদস্যদের ডাটা দেখতে পারবে কিনা তা এখান থেকে নির্ধারণ করা যাবে।
+                </p>
+              </div>
+            )}
           </div>
         )}
 

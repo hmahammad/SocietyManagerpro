@@ -45,6 +45,26 @@ export default function App() {
     }
   }, [theme]);
 
+  // Mobile bottom navigation bar and FAB visibility state
+  const [isNavVisible, setIsNavVisible] = useState(true);
+  const [lastScrollY, setLastScrollY] = useState(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      // Hide on scroll down, show on scroll up
+      if (currentScrollY > lastScrollY && currentScrollY > 60) {
+        setIsNavVisible(false);
+      } else {
+        setIsNavVisible(true);
+      }
+      setLastScrollY(currentScrollY);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [lastScrollY]);
+
   // Router-like state variables
   const [currentView, setCurrentView] = useState<RouteView>("login");
   const [navigationParams, setNavigationParams] = useState<any>(null);
@@ -262,6 +282,7 @@ export default function App() {
         setLanguage={setLanguage}
         theme={theme}
         setTheme={setTheme}
+        isNavVisible={isNavVisible}
       />
       <GlobalSlider currentUser={currentUser} language={language} />
       <AnimatePresence mode="wait">
@@ -273,7 +294,7 @@ export default function App() {
           transition={{ duration: 0.2, ease: "easeInOut" }}
         >
           {currentView === "dashboard" && (
-            <DashboardView currentUser={currentUser} onNavigate={handleNavigate} navigationParams={navigationParams} totalEntries={totalEntries} />
+            <DashboardView currentUser={currentUser} onNavigate={handleNavigate} navigationParams={navigationParams} totalEntries={totalEntries} isNavVisible={isNavVisible} />
           )}
 
           {currentView === "member-list" && (
